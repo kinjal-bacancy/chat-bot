@@ -12,6 +12,8 @@ venv/
 # Runtime data: uploaded files, sqlite db, vector index
 data/*
 !data/.gitkeep
+!data/uploads/
+data/uploads/*
 !data/uploads/.gitkeep
 
 # Model caches
