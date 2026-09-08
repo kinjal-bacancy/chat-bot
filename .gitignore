@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Secrets
+.env
+
+# Runtime data: uploaded files, sqlite db, vector index
+data/*
+!data/.gitkeep
+!data/uploads/.gitkeep
+
+# Model caches
+.cache/
+*.onnx
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store

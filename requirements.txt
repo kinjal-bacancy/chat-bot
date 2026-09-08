@@ -1,0 +1,18 @@
+# ---- Web / API layer -------------------------------------------------
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20        # multipart form parsing -> file uploads
+pydantic==2.10.4
+pydantic-settings==2.7.0        # typed settings loaded from .env
+
+# ---- UI --------------------------------------------------------------
+streamlit==1.41.1
+requests==2.32.3                # Streamlit -> FastAPI calls
+
+# ---- Dev / test ------------------------------------------------------
+pytest==8.3.4
+httpx==0.28.1                   # FastAPI TestClient transport
+
+# NOTE: dependencies for parsing, embeddings, vector store and the LLM
+# providers are added in later steps, so that `pip install -r
+# requirements.txt` always reflects a working state of the project.
