@@ -16,7 +16,12 @@ _BLOCK_TAGS = ("p", "div", "section", "article", "br", "li", "tr",
 
 
 def parse(path: Path) -> ParsedDocument:
-    soup = BeautifulSoup(path.read_bytes(), "lxml")
+    # The standard library's parser, not lxml. lxml is a C extension, and on
+    # a Python version it has no wheel for it tries to compile against
+    # libxml2 headers that a build host is unlikely to have. html.parser is
+    # marginally less forgiving of malformed markup, which does not matter
+    # when the job is extracting text.
+    soup = BeautifulSoup(path.read_bytes(), "html.parser")
 
     for tag in soup(_NON_CONTENT_TAGS):
         tag.decompose()

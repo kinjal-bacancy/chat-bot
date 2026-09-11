@@ -39,6 +39,17 @@ Runs one process, so the in-process backend is used. Nothing to configure --
 2. At https://share.streamlit.io, **Create app** from your repository.
    - **Main file path:** `ui/streamlit_app.py`
    - Branch: `main`
+   - **Advanced settings > Python version: 3.12**
+
+   The Python version matters more than it looks. Dependencies here are
+   pinned to exact versions, and a pinned version only installs cleanly on a
+   Python it publishes a wheel for. On a very new Python, pip falls back to
+   building from source and fails on a missing C toolchain -- which is how a
+   3.14 builder produced `Please make sure the libxml2 and libxslt
+   development packages are installed`.
+
+   The Python version cannot be changed on an existing app. If one is already
+   deployed on the wrong version, delete it and deploy again.
 
 3. **Advanced settings > Secrets**, in TOML:
 
@@ -79,3 +90,9 @@ misnamed. Uploading and parsing still work; embedding and answering do not.
 midnight Pacific.
 
 **Uploads vanish.** Expected. No persistent disk on any free tier.
+
+**A dependency fails to build.** Almost always a Python version with no wheel
+for a pinned package, so pip tries to compile it. Check the version shown at
+the top of the build log (`Using Python 3.x environment`) and redeploy on
+3.12. Building from source on a hosted builder rarely succeeds -- there is no
+compiler toolchain and no development headers.
