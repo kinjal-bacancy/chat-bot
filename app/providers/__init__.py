@@ -54,6 +54,7 @@ def build_llm_provider(settings: Settings) -> LLMProvider:
             model=settings.llm_model,
             temperature=settings.llm_temperature,
             max_output_tokens=settings.llm_max_output_tokens,
+            thinking_budget=settings.llm_thinking_budget,
         )
 
     raise ProviderError(f"Unknown LLM provider: {settings.llm_provider}")

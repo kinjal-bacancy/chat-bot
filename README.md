@@ -49,6 +49,11 @@ Run the UI (in a second terminal):
 streamlit run ui/streamlit_app.py
 ```
 
+Then open http://localhost:8501. Upload a document in the sidebar -- it is
+parsed, chunked and embedded automatically -- and ask a question. Every
+answer expands into a retrieval panel showing which chunks were retrieved,
+how each scored, and which of them the answer actually cited.
+
 ## Using the API
 
 Upload a document, then ingest it (parse, chunk and embed in one call):

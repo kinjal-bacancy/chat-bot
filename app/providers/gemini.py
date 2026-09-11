@@ -116,14 +116,23 @@ class GeminiLLMProvider:
         api_key: str,
         model: str,
         temperature: float = 0.0,
-        max_output_tokens: int = 1024,
+        max_output_tokens: int = 2048,
+        thinking_budget: int = 0,
     ) -> None:
         self.model = model
         self._client = genai.Client(api_key=api_key)
         # Temperature 0 by default: the job is to restate what the sources
         # say, and sampling variety here shows up as invention.
+        #
+        # Thinking is off by default, and that is a correctness fix as much
+        # as a latency one. Thinking tokens are drawn from max_output_tokens,
+        # so a long answer can spend the whole budget reasoning and return
+        # nothing at all -- measured here, a 200-word request came back empty.
+        # Restating retrieved passages is not a task that needs deliberation.
         self._config = types.GenerateContentConfig(
-            temperature=temperature, max_output_tokens=max_output_tokens
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+            thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget),
         )
 
     def _with_system(self, system: str) -> types.GenerateContentConfig:
@@ -136,7 +145,20 @@ class GeminiLLMProvider:
             ),
             "generation",
         )
-        return response.text or ""
+
+        if not response.text:
+            # Never return empty. An empty answer cites nothing, and an
+            # answer citing nothing is read as a refusal -- so the user would
+            # be told the documents do not cover their question when in fact
+            # the model produced nothing.
+            reason = (
+                response.candidates[0].finish_reason if response.candidates else None
+            )
+            raise ProviderError(
+                f"Gemini returned no text (finish_reason={reason}). "
+                f"If this is MAX_TOKENS, raise LLM_MAX_OUTPUT_TOKENS."
+            )
+        return response.text
 
     def stream(self, system: str, prompt: str) -> Iterator[str]:
         # Retried only up to the first token: once output has been sent to
@@ -147,9 +169,17 @@ class GeminiLLMProvider:
             ),
             "generation",
         )
+        produced = False
         try:
             for chunk in stream:
                 if chunk.text:
+                    produced = True
                     yield chunk.text
         except Exception as exc:
             raise ProviderError(f"Gemini generation failed: {exc}") from exc
+
+        if not produced:
+            raise ProviderError(
+                "Gemini returned no text. If this recurs, raise "
+                "LLM_MAX_OUTPUT_TOKENS or check the model is available."
+            )

@@ -1,8 +1,11 @@
 """Answering questions from the indexed documents."""
 
+import json
 import sqlite3
+from typing import Iterator
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_db, get_embedding_provider, get_llm_provider
@@ -118,4 +121,102 @@ def ask(
         searched_chunks=searched,
         mode=mode,
         model=answer.model,
+    )
+
+
+def _retrieve(request, settings, embedder, conn):
+    """Shared retrieval for both the plain and streaming endpoints."""
+    mode = request.mode or settings.search_mode
+    hits, searched = retrieval.search(
+        conn,
+        embedder,
+        request.question,
+        top_k=request.top_k or settings.search_top_k,
+        mode=mode,
+        candidates=settings.search_candidates,
+        dense_weight=settings.search_dense_weight,
+        keyword_weight=settings.search_keyword_weight,
+        document_ids=request.document_ids,
+    )
+    return mode, hits, searched
+
+
+def _event(name: str, payload: dict) -> str:
+    return f"event: {name}\ndata: {json.dumps(payload)}\n\n"
+
+
+@router.post(
+    "/ask/stream",
+    summary="Ask a grounded question, streaming the answer",
+    response_class=StreamingResponse,
+)
+def ask_stream(
+    request: AskRequest,
+    settings: Settings = Depends(get_settings),
+    embedder: EmbeddingProvider = Depends(get_embedding_provider),
+    llm: LLMProvider = Depends(get_llm_provider),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> StreamingResponse:
+    """Server-sent events: `retrieved`, then `delta` per piece, then `done`.
+
+    Retrieval runs to completion before the stream opens, for two reasons.
+    The database connection is a request-scoped dependency and must not be
+    read from inside the generator, and sending the retrieved chunks first
+    lets a UI fill in its sources panel while the answer is still arriving.
+    """
+    mode, hits, searched = _retrieve(request, settings, embedder, conn)
+    sources = answering.build_sources(hits)
+    prompt = answering.build_prompt(request.question, sources) if sources else ""
+
+    def events() -> Iterator[str]:
+        yield _event(
+            "retrieved",
+            {
+                "retrieved": [vars(s) for s in sources],
+                "searched_chunks": searched,
+                "mode": mode,
+                "model": llm.model,
+            },
+        )
+
+        if not sources:
+            yield _event(
+                "done",
+                {
+                    "answer": (
+                        "No indexed documents matched this question."
+                        if searched == 0
+                        else "The documents do not contain anything relevant."
+                    ),
+                    "refused": True,
+                    "sources": [],
+                },
+            )
+            return
+
+        collected: list[str] = []
+        try:
+            for piece in llm.stream(answering.SYSTEM_PROMPT, prompt):
+                collected.append(piece)
+                yield _event("delta", {"text": piece})
+        except ProviderError as exc:
+            # The response has already started, so the status code is spent.
+            # An error event is the only way left to tell the client.
+            yield _event("error", {"detail": str(exc)})
+            return
+
+        answer = answering.assemble("".join(collected), sources, llm.model)
+        yield _event(
+            "done",
+            {
+                "answer": answer.text,
+                "refused": answer.refused,
+                "sources": [vars(s) for s in answer.sources],
+            },
+        )
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

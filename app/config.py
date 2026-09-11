@@ -67,7 +67,12 @@ class Settings(BaseSettings):
     # Zero by default: the task is to restate the sources faithfully, and
     # sampling variety in that job reads as invention.
     llm_temperature: float = 0.0
-    llm_max_output_tokens: int = 1024
+    llm_max_output_tokens: int = 2048
+    # Thinking tokens come out of the output budget, so a thinking model can
+    # spend the whole allowance reasoning and return nothing. Grounded
+    # restatement does not need it. Raise this only if answers need reasoning
+    # across sources rather than reporting them.
+    llm_thinking_budget: int = 0
 
     embedding_model: str = "gemini-embedding-001"
     # gemini-embedding-001 returns 3072 dimensions by default but is trained

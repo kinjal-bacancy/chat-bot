@@ -190,6 +190,13 @@ Things I expect to cost people time:
   name -- is worse than none, because it still retrieves and then misleads.
   Split on blank lines first and pack whole blocks, rather than slicing at a
   character offset.
+- **Thinking models can return nothing at all.** Thinking tokens come out of
+  `max_output_tokens`, so a long answer can spend the entire budget reasoning
+  and return an empty string -- measured here on a 200-word request. Worse, an
+  empty answer cites nothing, and an answer citing nothing is read as a
+  refusal, so the user is told the documents do not cover their question. Turn
+  thinking off for grounded restatement, and make an empty completion an error
+  rather than letting it pass as an answer.
 - **Transient provider errors are normal, not exceptional.** Ordinary use hit
   both a 429 rate limit and a 503 "high demand" within minutes. Retry with
   backoff on both, around embedding *and* generation -- it is easy to add it
@@ -200,7 +207,7 @@ Things I expect to cost people time:
 
 ## Status
 
-Steps 1-9 complete: scaffold, `/health`, document upload with content-type
+Steps 1-10 complete: scaffold, `/health`, document upload with content-type
 validation, streamed size limits and hash-based deduplication, text
 extraction for PDF / DOCX / TXT / MD / HTML / XLSX / CSV with running-header
 stripping and page numbers carried through for citations, block-atomic
@@ -208,7 +215,8 @@ chunking with heading context and whole-block overlap, Gemini embeddings
 cached by chunk hash with vectors stored in SQLite, and `POST /search`
 returning scored chunks with their provenance, in dense, keyword (SQLite
 FTS5/BM25) or fused hybrid mode, and `POST /ask` answering from those chunks
-with citations and a working refusal path.
+with citations and a working refusal path, and a Streamlit UI with streaming
+answers and a retrieval inspector.
 Providers are configured for Gemini (`gemini-3.8-flash` for generation,
 `gemini-embedding-001` for embeddings) but no provider code exists yet --
 that lands with embeddings in step 6. Chunking onward is planned, not built.
