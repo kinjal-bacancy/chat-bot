@@ -72,3 +72,38 @@ def test_truncated_embeddings_are_normalised():
 
 def test_a_zero_vector_does_not_divide_by_zero():
     assert gemini._normalise([0.0, 0.0]) == [0.0, 0.0]
+
+
+# --- honouring the server's requested delay ---------------------------
+
+
+def test_the_requested_retry_delay_is_read_from_the_error():
+    """Gemini says how long to wait. Guessing is strictly worse: a
+    five-per-minute quota asked for 45s while doubling from 2s had only
+    reached 30s, so the retry gave up while the quota was still recovering."""
+    assert gemini._requested_delay(Boom("'retryDelay': '45s'")) == 45.0
+    assert gemini._requested_delay(Boom("Please retry in 30.4s.")) == pytest.approx(30.4)
+
+
+def test_a_missing_delay_falls_back_to_backoff():
+    assert gemini._requested_delay(Boom("503 UNAVAILABLE")) is None
+
+
+def test_an_absurd_requested_delay_is_capped():
+    """A quota that resets tomorrow must not park the process until then."""
+    assert gemini._requested_delay(Boom("'retryDelay': '86400s'")) == gemini._MAX_WAIT_SECONDS
+
+
+def test_the_server_delay_is_used_instead_of_backoff(monkeypatch):
+    slept = []
+    monkeypatch.setattr(gemini.time, "sleep", slept.append)
+    attempts = []
+
+    def rate_limited():
+        attempts.append(1)
+        if len(attempts) < 2:
+            raise Boom("429 RESOURCE_EXHAUSTED 'retryDelay': '45s'")
+        return "ok"
+
+    assert gemini._call_with_retry(rate_limited, "generation") == "ok"
+    assert slept == [45.0], "backoff was used instead of the requested delay"

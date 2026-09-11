@@ -16,6 +16,7 @@ import argparse
 import json
 import sqlite3
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -86,12 +87,21 @@ def evaluate_retrieval(conn, provider, cases, mode: str, top_k: int, settings):
     return metrics, misses
 
 
-def evaluate_answers(conn, embedder, llm, cases, mode: str, top_k: int, settings):
-    """Ask for real. Slow and costs API calls, so it is opt-in."""
+def evaluate_answers(conn, embedder, llm, cases, mode: str, top_k: int, settings,
+                     delay: float = 0.0):
+    """Ask for real. Slow and costs API calls, so it is opt-in.
+
+    `delay` paces requests under a per-minute quota. The free tier allows as
+    few as five generations a minute, and while the provider retries on 429,
+    spending the whole run waiting for quota to recover is slower than simply
+    not exceeding it.
+    """
     results = {"answered": 0, "answerable": 0, "refused_correctly": 0,
                "should_refuse": 0, "wrongly_refused": [], "wrongly_answered": []}
 
-    for case in cases:
+    for position, case in enumerate(cases):
+        if delay and position:
+            time.sleep(delay)
         hits, _ = retrieval.search(
             conn, embedder, case["question"], top_k=top_k, mode=mode,
             candidates=settings.search_candidates,
@@ -130,6 +140,9 @@ def main() -> int:
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--answers", action="store_true",
                         help="also generate answers and score refusals")
+    parser.add_argument("--delay", type=float, default=13.0,
+                        help="seconds between generations; the free tier "
+                             "allows as few as five per minute")
     args = parser.parse_args()
 
     settings = get_settings()
@@ -170,8 +183,10 @@ def main() -> int:
         mode = args.mode or settings.search_mode
         print(f"\ngenerating answers (mode={mode})...")
         llm = build_llm_provider(settings)
+        print(f"pacing at {args.delay:.0f}s between questions "
+              f"(~{len(cases) * args.delay / 60:.0f} min)")
         results = evaluate_answers(
-            conn, embedder, llm, cases, mode, args.top_k, settings
+            conn, embedder, llm, cases, mode, args.top_k, settings, args.delay
         )
         print(f"\n{'answered when answerable':<30} "
               f"{results['answered']}/{results['answerable']}")

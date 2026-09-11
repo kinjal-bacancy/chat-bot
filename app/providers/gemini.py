@@ -1,6 +1,7 @@
 """Gemini embeddings."""
 
 import logging
+import re
 import time
 from typing import Iterator
 
@@ -20,6 +21,20 @@ _QUERY = "RETRIEVAL_QUERY"
 
 _MAX_ATTEMPTS = 5
 _BACKOFF_SECONDS = 2.0
+# Never wait longer than this for one attempt, however long the API asks.
+_MAX_WAIT_SECONDS = 75.0
+
+# Gemini states how long to wait, both as a RetryInfo field and in prose.
+# Guessing with exponential backoff is strictly worse: a five-per-minute quota
+# asked for 45 seconds while doubling from two had only reached thirty.
+_RETRY_DELAY = re.compile(
+    r"(?:retryDelay['\"]?[:=]\s*['\"]?|retry in )(\d+(?:\.\d+)?)s", re.IGNORECASE
+)
+
+
+def _requested_delay(error: Exception) -> float | None:
+    match = _RETRY_DELAY.search(str(error))
+    return min(float(match.group(1)), _MAX_WAIT_SECONDS) if match else None
 
 
 # Transient conditions worth waiting out rather than surfacing. 429 is the
@@ -55,10 +70,11 @@ def _call_with_retry(operation, describe: str):
                     f"Gemini {describe} failed after {_MAX_ATTEMPTS} attempts: {exc}"
                 ) from exc
 
-            delay = _BACKOFF_SECONDS * (2 ** (attempt - 1))
+            # Prefer what the server asked for; fall back to backoff.
+            delay = _requested_delay(exc) or _BACKOFF_SECONDS * (2 ** (attempt - 1))
             logger.warning(
                 "%s hit a transient error, retrying in %.0fs (attempt %d/%d): %s",
-                describe, delay, attempt, _MAX_ATTEMPTS, exc,
+                describe, delay, attempt, _MAX_ATTEMPTS, str(exc)[:160],
             )
             time.sleep(delay)
 
