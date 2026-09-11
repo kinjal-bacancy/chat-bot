@@ -30,8 +30,12 @@ Streamlit UI  ──HTTP──>  FastAPI  ──>  RAG pipeline  ──>  Vector
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env      # then fill in your keys
+cp .env.example .env
 ```
+
+Then put a Gemini API key in `.env` as `GEMINI_API_KEY`. Get one free at
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey). Upload and
+retrieval work without it; embeddings and answer generation do not.
 
 Run the API:
 

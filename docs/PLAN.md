@@ -110,9 +110,15 @@ ordering constraint that matters is retrieval (7) landing before generation (9).
 - **Retrieval is debuggable before generation exists.** `/search` ships three
   steps before any LLM call, so a bad answer can be attributed to retrieval or
   to generation instead of guessed at.
-- **Local embeddings first.** Free and unlimited, so chunking can be re-tuned
-  and re-indexed as often as needed without cost. Swap to a hosted model later
-  if quality demands it.
+- **Gemini for both embeddings and generation.** Team decision, and it
+  collapses the setup to a single API key with no multi-gigabyte model
+  download. `gemini-embedding-001` also supports asymmetric task types --
+  documents embedded as `RETRIEVAL_DOCUMENT`, queries as `RETRIEVAL_QUERY` --
+  which most small local models do not, and which measurably helps retrieval.
+- **Embeddings are cached by chunk hash.** Re-indexing after a chunking change
+  re-embeds only the chunks whose text actually changed. Without this, a rate
+  limit or a bill is the thing that stops you iterating on chunking, which is
+  the parameter most worth iterating on.
 - **No framework.** Writing the pipeline directly rather than using LangChain or
   LlamaIndex. Those are the right call for production, but here they'd hide
   exactly the mechanics the exercise is about — and debugging their abstractions
@@ -127,9 +133,10 @@ Not settled, and reasonable people differ:
 - **Chunk size and strategy.** Fixed-token, recursive, or semantic. Big chunks
   retrieve less precisely; small chunks lose the context needed to answer. This
   has more effect on output quality than model choice does.
-- **Embedding model.** Local `sentence-transformers` (free, decent) vs a hosted
-  model (better, costs per re-index). I've deferred this behind the provider
-  interface rather than committing.
+- **Embedding dimensions.** `gemini-embedding-001` returns 3072 by default but
+  is trained so a truncated prefix still works; 768 is Google's recommendation
+  and gives a four-times smaller index. Changing it invalidates every stored
+  vector, so it is worth settling before you index anything large.
 - **Vector store.** Chroma, LanceDB, FAISS, or pgvector. For this scale it
   genuinely does not matter much — pick on API ergonomics, not benchmarks.
 - **Hybrid weighting.** How to fuse BM25 with vector scores, and whether a
@@ -156,4 +163,6 @@ Things I expect to cost people time:
 
 Steps 1-3 complete: scaffold, `/health`, and document upload with
 content-type validation, streamed size limits and hash-based deduplication.
-Parsing onward is planned, not built.
+Providers are configured for Gemini (`gemini-3.8-flash` for generation,
+`gemini-embedding-001` for embeddings) but no provider code exists yet --
+that lands with embeddings in step 6. Parsing onward is planned, not built.

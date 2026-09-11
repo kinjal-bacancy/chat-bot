@@ -2,8 +2,15 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Providers that actually have an implementation. Adding one means adding it
+# here too, so an unimplemented value fails at startup with a clear error
+# rather than at the first embedding call.
+EmbeddingProviderName = Literal["gemini"]
+LLMProviderName = Literal["gemini"]
 
 
 class Settings(BaseSettings):
@@ -24,14 +31,22 @@ class Settings(BaseSettings):
     # oversized file is never held in memory or fully written to disk.
     max_upload_mb: int = 25
 
-    # Which provider implementation to use. Validated properly in the step
-    # that introduces the provider registry.
-    embedding_provider: str = "local"
-    llm_provider: str = "anthropic"
+    # Which provider implementation to use.
+    embedding_provider: EmbeddingProviderName = "gemini"
+    llm_provider: LLMProviderName = "gemini"
 
-    # Only the key for the selected provider needs to be set.
-    anthropic_api_key: str | None = None
-    voyage_api_key: str | None = None
+    # Named GEMINI_API_KEY because the google-genai SDK reads that variable
+    # itself, so its client needs no explicit wiring.
+    gemini_api_key: str | None = None
+
+    llm_model: str = "gemini-3.8-flash"
+
+    embedding_model: str = "gemini-embedding-001"
+    # gemini-embedding-001 returns 3072 dimensions by default but is trained
+    # so that a truncated prefix is still a usable embedding. 768 is Google's
+    # recommended size and makes the index four times smaller for a small
+    # quality cost. Changing this invalidates every stored vector.
+    embedding_dimensions: int = 768
 
     @property
     def uploads_dir(self) -> Path:
@@ -44,6 +59,12 @@ class Settings(BaseSettings):
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
+
+    @property
+    def credentials_configured(self) -> bool:
+        """Whether a key is present for the selected providers. Never exposes
+        the key itself -- only whether one was supplied."""
+        return bool(self.gemini_api_key)
 
 
 @lru_cache
