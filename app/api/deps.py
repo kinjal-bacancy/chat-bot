@@ -7,7 +7,12 @@ from fastapi import Depends
 
 from app.config import Settings, get_settings
 from app.core import database
-from app.providers import EmbeddingProvider, build_embedding_provider
+from app.providers import (
+    EmbeddingProvider,
+    LLMProvider,
+    build_embedding_provider,
+    build_llm_provider,
+)
 
 
 def get_db(settings: Settings = Depends(get_settings)) -> Iterator[sqlite3.Connection]:
@@ -32,3 +37,7 @@ def get_embedding_provider(
     a fake and never reach the network.
     """
     return build_embedding_provider(settings)
+
+
+def get_llm_provider(settings: Settings = Depends(get_settings)) -> LLMProvider:
+    return build_llm_provider(settings)

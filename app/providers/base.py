@@ -4,7 +4,7 @@ The pipeline depends on these, never on a vendor SDK, so swapping Gemini for
 something else is a change confined to this package.
 """
 
-from typing import Protocol, runtime_checkable
+from typing import Iterator, Protocol, runtime_checkable
 
 
 class ProviderError(Exception):
@@ -35,4 +35,19 @@ class EmbeddingProvider(Protocol):
 
     def embed_query(self, text: str) -> list[float]:
         """Embed a question being asked."""
+        ...
+
+
+@runtime_checkable
+class LLMProvider(Protocol):
+    """Generates an answer from a prompt."""
+
+    model: str
+
+    def generate(self, system: str, prompt: str) -> str:
+        """Return the whole answer."""
+        ...
+
+    def stream(self, system: str, prompt: str) -> Iterator[str]:
+        """Yield the answer in pieces, for a UI that shows it as it arrives."""
         ...

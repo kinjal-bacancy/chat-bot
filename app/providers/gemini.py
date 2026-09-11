@@ -2,6 +2,7 @@
 
 import logging
 import time
+from typing import Iterator
 
 import numpy as np
 from google import genai
@@ -21,9 +22,45 @@ _MAX_ATTEMPTS = 5
 _BACKOFF_SECONDS = 2.0
 
 
-def _is_rate_limited(error: Exception) -> bool:
+# Transient conditions worth waiting out rather than surfacing. 429 is the
+# free tier's per-minute limit; 503 is Gemini shedding load under demand and
+# is just as temporary. Both were hit within minutes of each other in
+# ordinary use, and a user retrying by hand is not an error-handling strategy.
+_RETRYABLE = ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE", "500", "INTERNAL")
+
+
+def _is_retryable(error: Exception) -> bool:
     text = str(error).upper()
-    return "429" in text or "RESOURCE_EXHAUSTED" in text
+    return any(marker in text for marker in _RETRYABLE)
+
+
+def _call_with_retry(operation, describe: str):
+    """Run a Gemini call, waiting out rate limits.
+
+    The free tier is limited per minute, and both embedding a document and
+    answering a question can hit it. Waiting is the correct response; failing
+    the user's request is not.
+    """
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        try:
+            return operation()
+        except Exception as exc:
+            if not _is_retryable(exc):
+                raise ProviderError(f"Gemini {describe} failed: {exc}") from exc
+
+            if attempt == _MAX_ATTEMPTS:
+                # Say that it was retried, so a persistent outage is not read
+                # as a one-off blip that might work if you just try again.
+                raise ProviderError(
+                    f"Gemini {describe} failed after {_MAX_ATTEMPTS} attempts: {exc}"
+                ) from exc
+
+            delay = _BACKOFF_SECONDS * (2 ** (attempt - 1))
+            logger.warning(
+                "%s hit a transient error, retrying in %.0fs (attempt %d/%d): %s",
+                describe, delay, attempt, _MAX_ATTEMPTS, exc,
+            )
+            time.sleep(delay)
 
 
 def _normalise(values: list[float]) -> list[float]:
@@ -55,27 +92,13 @@ class GeminiEmbeddingProvider:
             task_type=task_type, output_dimensionality=self.dimensions
         )
 
-        for attempt in range(1, _MAX_ATTEMPTS + 1):
-            try:
-                response = self._client.models.embed_content(
-                    model=self.model, contents=texts, config=config
-                )
-                return [_normalise(item.values) for item in response.embeddings]
-            except Exception as exc:
-                # The free tier is rate limited per minute, and a re-index of a
-                # large document will hit it. Waiting is the correct response;
-                # failing the whole run is not.
-                if _is_rate_limited(exc) and attempt < _MAX_ATTEMPTS:
-                    delay = _BACKOFF_SECONDS * (2 ** (attempt - 1))
-                    logger.warning(
-                        "Embedding rate limited, retrying in %.0fs (attempt %d/%d)",
-                        delay, attempt, _MAX_ATTEMPTS,
-                    )
-                    time.sleep(delay)
-                    continue
-                raise ProviderError(f"Gemini embedding failed: {exc}") from exc
-
-        raise ProviderError("Gemini embedding failed: rate limit not cleared")
+        response = _call_with_retry(
+            lambda: self._client.models.embed_content(
+                model=self.model, contents=texts, config=config
+            ),
+            "embedding",
+        )
+        return [_normalise(item.values) for item in response.embeddings]
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         vectors: list[list[float]] = []
@@ -85,3 +108,48 @@ class GeminiEmbeddingProvider:
 
     def embed_query(self, text: str) -> list[float]:
         return self._embed([text], _QUERY)[0]
+
+
+class GeminiLLMProvider:
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        temperature: float = 0.0,
+        max_output_tokens: int = 1024,
+    ) -> None:
+        self.model = model
+        self._client = genai.Client(api_key=api_key)
+        # Temperature 0 by default: the job is to restate what the sources
+        # say, and sampling variety here shows up as invention.
+        self._config = types.GenerateContentConfig(
+            temperature=temperature, max_output_tokens=max_output_tokens
+        )
+
+    def _with_system(self, system: str) -> types.GenerateContentConfig:
+        return self._config.model_copy(update={"system_instruction": system})
+
+    def generate(self, system: str, prompt: str) -> str:
+        response = _call_with_retry(
+            lambda: self._client.models.generate_content(
+                model=self.model, contents=prompt, config=self._with_system(system)
+            ),
+            "generation",
+        )
+        return response.text or ""
+
+    def stream(self, system: str, prompt: str) -> Iterator[str]:
+        # Retried only up to the first token: once output has been sent to
+        # the caller, restarting would duplicate what they already have.
+        stream = _call_with_retry(
+            lambda: self._client.models.generate_content_stream(
+                model=self.model, contents=prompt, config=self._with_system(system)
+            ),
+            "generation",
+        )
+        try:
+            for chunk in stream:
+                if chunk.text:
+                    yield chunk.text
+        except Exception as exc:
+            raise ProviderError(f"Gemini generation failed: {exc}") from exc

@@ -4,10 +4,10 @@ from typing import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.deps import get_embedding_provider
+from app.api.deps import get_embedding_provider, get_llm_provider
 from app.config import Settings, get_settings
 from app.main import create_app
-from tests.fakes import FakeEmbeddingProvider
+from tests.fakes import FakeEmbeddingProvider, FakeLLMProvider
 
 MAX_UPLOAD_MB = 1  # keep the oversized-upload test cheap
 
@@ -60,3 +60,11 @@ def embeddings(app) -> FakeEmbeddingProvider:
 @pytest.fixture
 def uploads_dir(data_dir: Path) -> Path:
     return data_dir / "uploads"
+
+
+@pytest.fixture
+def llm(app) -> FakeLLMProvider:
+    """Substitute a scripted LLM. Tests may set `llm.reply` to script it."""
+    provider = FakeLLMProvider()
+    app.dependency_overrides[get_llm_provider] = lambda: provider
+    return provider

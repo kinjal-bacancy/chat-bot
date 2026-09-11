@@ -37,3 +37,27 @@ class FakeEmbeddingProvider:
     def embed_query(self, text: str) -> list[float]:
         self.query_calls.append(text)
         return self._vector(text)
+
+
+class FakeLLMProvider:
+    """Returns a scripted answer and records what it was asked.
+
+    Generation quality cannot be unit tested, but everything around it can:
+    that the prompt carries the sources, that citations are parsed and
+    validated, and that an uncited answer is treated as a refusal.
+    """
+
+    model = "fake-llm"
+
+    def __init__(self, reply: str = "The answer is in the sources [1].") -> None:
+        self.reply = reply
+        self.system_prompts: list[str] = []
+        self.prompts: list[str] = []
+
+    def generate(self, system: str, prompt: str) -> str:
+        self.system_prompts.append(system)
+        self.prompts.append(prompt)
+        return self.reply
+
+    def stream(self, system: str, prompt: str):
+        yield self.generate(system, prompt)

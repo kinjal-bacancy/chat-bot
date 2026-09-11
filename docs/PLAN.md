@@ -125,8 +125,14 @@ ordering constraint that matters is retrieval (7) landing before generation (9).
   LlamaIndex. Those are the right call for production, but here they'd hide
   exactly the mechanics the exercise is about — and debugging their abstractions
   costs more than writing 200 lines of retrieval code.
-- **Refusal is a feature.** "The documents don't cover this" is a correct
-  answer, and worth building deliberately rather than hoping the prompt holds.
+- **Refusal is a feature, and it has to be structural.** "The documents don't
+  cover this" is a correct answer. It cannot come from a score threshold:
+  scores are compressed, and a question about something entirely absent still
+  retrieves chunks around 0.6. So every claim must carry a `[n]` citation, and
+  an answer that cites nothing *is* the refusal -- a structural signal rather
+  than a phrase to pattern-match. Confirmed working: asked about AWS spend,
+  which the gem audit says nothing about, the model declined despite being
+  handed four chunks scoring 0.597.
 
 ## Decision points you'll each hit
 
@@ -184,20 +190,25 @@ Things I expect to cost people time:
   name -- is worse than none, because it still retrieves and then misleads.
   Split on blank lines first and pack whole blocks, rather than slicing at a
   character offset.
+- **Transient provider errors are normal, not exceptional.** Ordinary use hit
+  both a 429 rate limit and a 503 "high demand" within minutes. Retry with
+  backoff on both, around embedding *and* generation -- it is easy to add it
+  to one and forget the other.
 - **Re-indexing friction.** You will change your chunking strategy several
   times. If re-indexing is slow or manual, you'll avoid doing it and settle for
   a worse strategy. Make it one command.
 
 ## Status
 
-Steps 1-8 complete: scaffold, `/health`, document upload with content-type
+Steps 1-9 complete: scaffold, `/health`, document upload with content-type
 validation, streamed size limits and hash-based deduplication, text
 extraction for PDF / DOCX / TXT / MD / HTML / XLSX / CSV with running-header
 stripping and page numbers carried through for citations, block-atomic
 chunking with heading context and whole-block overlap, Gemini embeddings
 cached by chunk hash with vectors stored in SQLite, and `POST /search`
 returning scored chunks with their provenance, in dense, keyword (SQLite
-FTS5/BM25) or fused hybrid mode.
+FTS5/BM25) or fused hybrid mode, and `POST /ask` answering from those chunks
+with citations and a working refusal path.
 Providers are configured for Gemini (`gemini-3.8-flash` for generation,
 `gemini-embedding-001` for embeddings) but no provider code exists yet --
 that lands with embeddings in step 6. Chunking onward is planned, not built.

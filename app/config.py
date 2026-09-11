@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
 
     llm_model: str = "gemini-3.8-flash"
+    # Zero by default: the task is to restate the sources faithfully, and
+    # sampling variety in that job reads as invention.
+    llm_temperature: float = 0.0
+    llm_max_output_tokens: int = 1024
 
     embedding_model: str = "gemini-embedding-001"
     # gemini-embedding-001 returns 3072 dimensions by default but is trained
