@@ -1,0 +1,87 @@
+{
+  "corpus": "salesequity-gemfile-audit.xlsx",
+  "note": "Ground truth is expressed as strings that must all appear in a chunk for it to count as relevant. That keeps the set writable by hand and independent of chunk ids, which change whenever the chunking strategy does.",
+  "cases": [
+    {
+      "question": "what is the status of the ckeditor gem",
+      "relevant_if_contains": ["ckeditor", "Stale"]
+    },
+    {
+      "question": "what should we replace ckeditor with",
+      "relevant_if_contains": ["ckeditor", "Action Text"]
+    },
+    {
+      "question": "what exact version of rails is this app on",
+      "relevant_if_contains": ["rails", "6.1.7.10"]
+    },
+    {
+      "question": "what version is puma pinned to",
+      "relevant_if_contains": ["puma", "~> 5.6"]
+    },
+    {
+      "question": "are we running two app servers",
+      "relevant_if_contains": ["unicorn", "puma"]
+    },
+    {
+      "question": "which two gems both do deep cloning",
+      "relevant_if_contains": ["amoeba", "deep_cloneable"]
+    },
+    {
+      "question": "which encryption gems overlap",
+      "relevant_if_contains": ["attr_encrypted", "lockbox"]
+    },
+    {
+      "question": "which select box libraries are duplicated",
+      "relevant_if_contains": ["select2-rails", "chosen-rails"]
+    },
+    {
+      "question": "which client side validation gems overlap",
+      "relevant_if_contains": ["parsley", "jquery-validation"]
+    },
+    {
+      "question": "which gem generates PDFs",
+      "relevant_if_contains": ["wicked_pdf"]
+    },
+    {
+      "question": "what is redis used for and what version",
+      "relevant_if_contains": ["redis", "~> 4.8"]
+    },
+    {
+      "question": "what does jbuilder overlap with",
+      "relevant_if_contains": ["jbuilder", "active_model_serializers"]
+    },
+    {
+      "question": "which gem handles scheduled cron jobs",
+      "relevant_if_contains": ["whenever"]
+    },
+    {
+      "question": "what should be moved to yarn",
+      "relevant_if_contains": ["To yarn"]
+    },
+    {
+      "question": "which gems does rails already provide natively",
+      "relevant_if_contains": ["Rails native"]
+    },
+    {
+      "question": "how many gems are marked keep",
+      "relevant_if_contains": ["Keep", "63"]
+    },
+
+    {
+      "question": "what is our monthly AWS spend on S3",
+      "should_refuse": true
+    },
+    {
+      "question": "how many employees does the company have",
+      "should_refuse": true
+    },
+    {
+      "question": "what is the customer churn rate this quarter",
+      "should_refuse": true
+    },
+    {
+      "question": "which database tables have the most rows",
+      "should_refuse": true
+    }
+  ]
+}

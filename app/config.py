@@ -44,11 +44,13 @@ class Settings(BaseSettings):
     # than top_k on purpose: a chunk ranked 20th by one retriever and 2nd by
     # the other should still surface.
     search_candidates: int = 50
-    # Measured on the gem audit: dense 0.933 MRR, hybrid 0.883, keyword
-    # 0.803 over 10 questions. Hybrid is the usual recommendation and is
-    # kept ready, but defaulting to it here would be following advice over
-    # evidence. Revisit against the evaluation set on a larger corpus.
-    search_mode: str = "dense"    # hybrid | dense | keyword
+    # Measured against eval/dataset.json on the gem audit: dense and hybrid
+    # are identical at every top_k (0.938 hit@1, 1.000 hit@2, MRR 0.969);
+    # keyword alone trails. Hybrid is the default because it matches dense
+    # here and degrades more gracefully as a corpus grows -- the lexical half
+    # earns its keep on rare exact terms, which one 31-chunk document has too
+    # few of to show. Re-run `python -m eval.run` on your own corpus.
+    search_mode: str = "hybrid"   # hybrid | dense | keyword
     # Relative pull of each retriever during fusion. Dense leads because
     # keyword search answers every query, including ones with no rare terms
     # in them, and an unweighted fusion lets it outvote a correct ranking.

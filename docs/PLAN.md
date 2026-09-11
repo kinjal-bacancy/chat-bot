@@ -154,14 +154,15 @@ Not settled, and reasonable people differ:
   compared by brute force with numpy. A few thousand chunks compare in under a
   millisecond and there is no second service to run. The ceiling is real but
   explicit — around a hundred thousand chunks this wants a proper index.
-- **Hybrid weighting.** Built and measured, and the result was not the
-  expected one. Over 10 questions against the 115-row gem audit: dense 0.933
-  MRR, hybrid 0.883, keyword 0.803. Hybrid lost, and was insensitive to the
-  fusion weight. The corpus is one document and 31 chunks, where dense
-  retrieval is already close to perfect and there is nothing for a second
-  retriever to add. Both retrievers ship, `SEARCH_MODE` selects, and the
-  default is dense until a larger evaluation set says otherwise. Worth
-  measuring on your own corpus rather than taking either default on faith.
+- **Hybrid weighting.** Settled by measurement, after a first attempt that
+  measured it wrong. Judged by whether a single rare term appeared in a
+  retrieved chunk, hybrid looked worse than dense (0.883 vs 0.933 MRR). Judged
+  against `eval/dataset.json`, where relevance requires every distinguishing
+  term to be present, they are identical at every top_k: 0.938 hit@1, 1.000
+  hit@5, 0.969 MRR. The lesson is about the ground truth, not the retrievers --
+  a weak relevance judgement produced a confident wrong conclusion. Hybrid is
+  the default on the tiebreak that it degrades more gracefully as a corpus
+  grows.
 - **Dense scores are compressed.** Every hit on the gem audit lands between
   0.65 and 0.72, correct ones included. The ranking is right but the margin is
   thin, so there is no score threshold that means "actually relevant" -- which
@@ -200,14 +201,24 @@ Things I expect to cost people time:
 - **Transient provider errors are normal, not exceptional.** Ordinary use hit
   both a 429 rate limit and a 503 "high demand" within minutes. Retry with
   backoff on both, around embedding *and* generation -- it is easy to add it
-  to one and forget the other.
+  to one and forget the other. Note that a *daily* quota looks identical to a
+  per-minute one in the error, and no amount of backoff will clear it.
+- **Check the free-tier quota before choosing a model.** `gemini-3.8-flash`
+  allows 20 generate_content requests per day on the free tier -- enough to
+  exhaust during a single evaluation run -- and answered in 15-35s.
+  `gemini-3.5-flash` answered the same prompt in 1.4s with quota to spare. The
+  model name that sounds newest is not automatically the one to build on.
+- **Weak ground truth produces confident wrong conclusions.** The first
+  hybrid-vs-dense comparison used "does a rare term appear in the chunk" as
+  its relevance judgement, and reversed the real answer. Write the evaluation
+  set before trusting any comparison run against it.
 - **Re-indexing friction.** You will change your chunking strategy several
   times. If re-indexing is slow or manual, you'll avoid doing it and settle for
   a worse strategy. Make it one command.
 
 ## Status
 
-Steps 1-10 complete: scaffold, `/health`, document upload with content-type
+All 11 steps complete: scaffold, `/health`, document upload with content-type
 validation, streamed size limits and hash-based deduplication, text
 extraction for PDF / DOCX / TXT / MD / HTML / XLSX / CSV with running-header
 stripping and page numbers carried through for citations, block-atomic
@@ -215,8 +226,9 @@ chunking with heading context and whole-block overlap, Gemini embeddings
 cached by chunk hash with vectors stored in SQLite, and `POST /search`
 returning scored chunks with their provenance, in dense, keyword (SQLite
 FTS5/BM25) or fused hybrid mode, and `POST /ask` answering from those chunks
-with citations and a working refusal path, and a Streamlit UI with streaming
-answers and a retrieval inspector.
+with citations and a working refusal path, a Streamlit UI with streaming
+answers and a retrieval inspector, and a golden evaluation set with retrieval
+metrics.
 Providers are configured for Gemini (`gemini-3.8-flash` for generation,
 `gemini-embedding-001` for embeddings) but no provider code exists yet --
 that lands with embeddings in step 6. Chunking onward is planned, not built.
