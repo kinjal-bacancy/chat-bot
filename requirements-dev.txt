@@ -1,0 +1,6 @@
+-r requirements.txt
+
+# Test-only.
+pytest==8.3.4
+httpx==0.28.1                   # FastAPI TestClient transport
+reportlab==4.2.5                # generates real PDFs for the parser tests

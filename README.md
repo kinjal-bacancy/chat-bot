@@ -30,7 +30,7 @@ Streamlit UI ──HTTP──► FastAPI ──► pipeline ──► SQLite (do
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # runtime deps plus the test runner
 cp .env.example .env
 ```
 
@@ -168,3 +168,19 @@ provider fails fast on it and retries only the per-minute kind.
 ```bash
 python -m pytest tests/ -q
 ```
+
+162 tests, none of which touch the network -- providers are substituted with
+fakes, so the suite runs without an API key and cannot fail on someone else's
+rate limit.
+
+## Deploying
+
+One container runs both processes. See [docs/DEPLOY.md](docs/DEPLOY.md).
+
+```bash
+./deploy/to-space.sh https://huggingface.co/spaces/<user>/<space>
+```
+
+Worth reading the constraints first: the free Gemini tier allows 20
+generations per day, nothing persists between restarts, and there is no
+authentication.

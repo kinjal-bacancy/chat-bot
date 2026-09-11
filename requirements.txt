@@ -20,11 +20,6 @@ openpyxl==3.1.5                 # xlsx/xlsm; csv and tsv use the stdlib
 google-genai==1.16.1            # Gemini embeddings and generation
 numpy==2.2.1                    # vector maths; the store is SQLite itself
 
-# ---- Dev / test ------------------------------------------------------
-pytest==8.3.4
-httpx==0.28.1                   # FastAPI TestClient transport
-reportlab==4.2.5                # test-only: generates real PDFs to parse
 
-# NOTE: dependencies for embeddings, the vector store and the LLM provider
-# are added in later steps, so that `pip install -r requirements.txt` always
-# reflects a working state of the project.
+# Test-only dependencies live in requirements-dev.txt, so the deployed image
+# does not ship a test runner.
