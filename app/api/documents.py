@@ -189,10 +189,29 @@ def get_document_pages(
     Worth actually reading. Extraction damage -- merged columns, tables
     flattened into nonsense, missing sections -- is invisible downstream and
     surfaces much later as answers that are subtly wrong.
+
+    An unparsed document is an error rather than an empty list, because an
+    empty list would be indistinguishable from a document that parsed
+    successfully and genuinely contained nothing.
     """
     document = documents_repo.get(conn, document_id)
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    if document.status == "uploaded":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=(
+                f"Document has not been parsed yet. "
+                f"POST /documents/{document_id}/parse first."
+            ),
+        )
+
+    if document.status == "failed":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f"Parsing failed for this document: {document.error}",
+        )
 
     return [
         PageResponse(number=page.number, text=page.text)

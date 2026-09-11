@@ -215,3 +215,24 @@ def test_deleting_a_document_removes_its_pages(client: TestClient):
 def test_parsing_an_unknown_document_is_404(client: TestClient):
     assert client.post("/documents/nope/parse").status_code == 404
     assert client.get("/documents/nope/pages").status_code == 404
+
+
+def test_reading_pages_before_parsing_explains_what_to_do(client: TestClient):
+    """An empty list here would be indistinguishable from a document that
+    parsed fine and contained nothing."""
+    document_id = ingest(client, "a.txt", b"some content")
+
+    response = client.get(f"/documents/{document_id}/pages")
+
+    assert response.status_code == 409
+    assert "/parse" in response.json()["detail"]
+
+
+def test_reading_pages_after_a_failed_parse_surfaces_the_error(client: TestClient):
+    document_id = ingest(client, "scan.pdf", pdf_bytes([[]]))
+    client.post(f"/documents/{document_id}/parse")
+
+    response = client.get(f"/documents/{document_id}/pages")
+
+    assert response.status_code == 409
+    assert "scanned" in response.json()["detail"].lower()
