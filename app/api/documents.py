@@ -8,7 +8,8 @@ from pydantic import BaseModel
 from app.api.deps import get_db
 from app.config import Settings, get_settings
 from app.core import documents as documents_repo
-from app.core import storage
+from app.core import pages as pages_repo
+from app.core import parsers, storage
 from app.core.documents import Document
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -121,3 +122,79 @@ def delete_document(
     if not documents_repo.delete(conn, document_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Document not found")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class PageResponse(BaseModel):
+    number: int
+    text: str
+
+
+class ParseResponse(BaseModel):
+    id: str
+    status: str
+    page_count: int
+    character_count: int
+
+
+@router.post(
+    "/{document_id}/parse",
+    response_model=ParseResponse,
+    summary="Extract text from a document",
+)
+def parse_document(
+    document_id: str,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> ParseResponse:
+    """Extract text and store it per page.
+
+    Safe to call repeatedly: a re-parse replaces the previous extraction, so
+    fixing a parser is a matter of running this again rather than re-uploading.
+    """
+    document = documents_repo.get(conn, document_id)
+    if document is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    try:
+        parsed = parsers.parse(document.stored_path, document.extension)
+    except parsers.ParserError as exc:
+        # Recorded on the document so a failure is visible in the listing
+        # rather than only in this one response.
+        documents_repo.set_status(conn, document_id, "failed", error=str(exc))
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+    pages_repo.replace_for_document(conn, document_id, parsed)
+    documents_repo.set_status(conn, document_id, "parsed")
+
+    return ParseResponse(
+        id=document_id,
+        status="parsed",
+        page_count=len(parsed.pages),
+        character_count=parsed.character_count,
+    )
+
+
+@router.get(
+    "/{document_id}/pages",
+    response_model=list[PageResponse],
+    summary="Read the extracted text",
+)
+def get_document_pages(
+    document_id: str,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[PageResponse]:
+    """Return the text exactly as the chunker will see it.
+
+    Worth actually reading. Extraction damage -- merged columns, tables
+    flattened into nonsense, missing sections -- is invisible downstream and
+    surfaces much later as answers that are subtly wrong.
+    """
+    document = documents_repo.get(conn, document_id)
+    if document is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    return [
+        PageResponse(number=page.number, text=page.text)
+        for page in pages_repo.list_for_document(conn, document_id)
+    ]

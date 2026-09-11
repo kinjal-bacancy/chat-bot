@@ -161,8 +161,10 @@ Things I expect to cost people time:
 
 ## Status
 
-Steps 1-3 complete: scaffold, `/health`, and document upload with
-content-type validation, streamed size limits and hash-based deduplication.
+Steps 1-4 complete: scaffold, `/health`, document upload with content-type
+validation, streamed size limits and hash-based deduplication, and text
+extraction for PDF / DOCX / TXT / MD / HTML with running-header stripping
+and page numbers carried through for citations.
 Providers are configured for Gemini (`gemini-3.8-flash` for generation,
 `gemini-embedding-001` for embeddings) but no provider code exists yet --
-that lands with embeddings in step 6. Parsing onward is planned, not built.
+that lands with embeddings in step 6. Chunking onward is planned, not built.

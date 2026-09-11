@@ -4,7 +4,7 @@ from typing import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.main import create_app
 
 MAX_UPLOAD_MB = 1  # keep the oversized-upload test cheap
@@ -14,6 +14,11 @@ MAX_UPLOAD_MB = 1  # keep the oversized-upload test cheap
 def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point the app at a throwaway data directory for one test."""
     target = tmp_path / "data"
+    # Ignore the developer's real .env. Without this the suite passes or fails
+    # depending on whose machine it runs on -- a configured API key alone was
+    # enough to break a test.
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("DATA_DIR", str(target))
     monkeypatch.setenv("MAX_UPLOAD_MB", str(MAX_UPLOAD_MB))
     # Settings are cached per process, so the cache has to be dropped for the

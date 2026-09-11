@@ -27,6 +27,15 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_documents_created_at ON documents (created_at DESC);
     """,
+    # 2: extracted text, one row per page
+    """
+    CREATE TABLE pages (
+        document_id  TEXT    NOT NULL REFERENCES documents (id) ON DELETE CASCADE,
+        page_number  INTEGER NOT NULL,
+        text         TEXT    NOT NULL,
+        PRIMARY KEY (document_id, page_number)
+    );
+    """,
 ]
 
 

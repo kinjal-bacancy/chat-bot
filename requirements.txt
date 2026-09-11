@@ -9,10 +9,17 @@ pydantic-settings==2.7.0        # typed settings loaded from .env
 streamlit==1.41.1
 requests==2.32.3                # Streamlit -> FastAPI calls
 
+# ---- Document parsing ------------------------------------------------
+pypdf==5.1.0                    # PDF text extraction
+python-docx==1.1.2              # .docx
+beautifulsoup4==4.12.3          # HTML -> text
+lxml==5.3.0                     # parser backend for beautifulsoup
+
 # ---- Dev / test ------------------------------------------------------
 pytest==8.3.4
 httpx==0.28.1                   # FastAPI TestClient transport
+reportlab==4.2.5                # test-only: generates real PDFs to parse
 
-# NOTE: dependencies for parsing, embeddings, vector store and the LLM
-# providers are added in later steps, so that `pip install -r
-# requirements.txt` always reflects a working state of the project.
+# NOTE: dependencies for embeddings, the vector store and the LLM provider
+# are added in later steps, so that `pip install -r requirements.txt` always
+# reflects a working state of the project.
