@@ -7,9 +7,8 @@ from pydantic import BaseModel
 
 from app.api.deps import get_db, get_embedding_provider
 from app.config import Settings, get_settings
-from app.core import chunking
 from app.core import chunks as chunks_repo
-from app.core import embeddings as embeddings_repo
+from app.core import pipeline
 from app.core import documents as documents_repo
 from app.core import pages as pages_repo
 from app.core import parsers, storage
@@ -159,23 +158,17 @@ def parse_document(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Document not found")
 
     try:
-        parsed = parsers.parse(document.stored_path, document.extension)
+        result = pipeline.parse(conn, document)
     except parsers.ParserError as exc:
-        # Recorded on the document so a failure is visible in the listing
-        # rather than only in this one response.
-        documents_repo.set_status(conn, document_id, "failed", error=str(exc))
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
 
-    pages_repo.replace_for_document(conn, document_id, parsed)
-    documents_repo.set_status(conn, document_id, "parsed")
-
     return ParseResponse(
         id=document_id,
         status="parsed",
-        page_count=len(parsed.pages),
-        character_count=parsed.character_count,
+        page_count=result.page_count,
+        character_count=result.character_count,
     )
 
 
@@ -261,33 +254,19 @@ def chunk_document(
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Document not found")
 
-    stored_pages = pages_repo.list_for_document(conn, document_id)
-    if not stored_pages:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail=(
-                f"Document has no extracted text. "
-                f"POST /documents/{document_id}/parse first."
-            ),
-        )
+    try:
+        pipeline.chunk(conn, settings, document_id)
+    except pipeline.StageNotReady as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
-    produced = chunking.chunk_pages(
-        [(page.number, page.text) for page in stored_pages],
-        target_chars=settings.chunk_target_chars,
-        overlap_chars=settings.chunk_overlap_chars,
-        max_chars=settings.chunk_max_chars,
-    )
-
-    chunks_repo.replace_for_document(conn, document_id, produced)
-    documents_repo.set_status(conn, document_id, "chunked")
-
-    total = sum(len(chunk.text) for chunk in produced)
+    stored = chunks_repo.list_for_document(conn, document_id)
+    total = sum(len(chunk.text) for chunk in stored)
     return ChunkSummary(
         id=document_id,
         status="chunked",
-        chunk_count=len(produced),
+        chunk_count=len(stored),
         total_characters=total,
-        average_characters=round(total / len(produced)) if produced else 0,
+        average_characters=round(total / len(stored)) if stored else 0,
         settings={
             "target_chars": settings.chunk_target_chars,
             "overlap_chars": settings.chunk_overlap_chars,
@@ -369,22 +348,12 @@ def embed_document(
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Document not found")
 
-    if chunks_repo.count_for_document(conn, document_id) == 0:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail=(
-                f"Document has no chunks. "
-                f"POST /documents/{document_id}/chunk first."
-            ),
-        )
-
     try:
-        run = embeddings_repo.embed_document(conn, provider, document_id)
+        run = pipeline.embed(conn, provider, document_id)
+    except pipeline.StageNotReady as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ProviderError as exc:
-        documents_repo.set_status(conn, document_id, "failed", error=str(exc))
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-
-    documents_repo.set_status(conn, document_id, "indexed")
 
     return EmbedResponse(
         id=document_id,
@@ -395,3 +364,55 @@ def embed_document(
         model=run.model,
         dimensions=run.dimensions,
     )
+
+
+class IngestResponse(BaseModel):
+    id: str
+    status: str
+    page_count: int
+    character_count: int
+    chunk_count: int
+    embedded: int
+    reused: int
+    model: str
+    dimensions: int
+
+
+@router.post(
+    "/{document_id}/ingest",
+    response_model=IngestResponse,
+    summary="Parse, chunk and embed in one call",
+)
+def ingest_document(
+    document_id: str,
+    settings: Settings = Depends(get_settings),
+    provider: EmbeddingProvider = Depends(get_embedding_provider),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> IngestResponse:
+    """Run the whole pipeline.
+
+    The individual stage endpoints exist for debugging -- each fails for
+    different reasons and is worth inspecting alone. This is the normal path:
+    a document that is parsed but not embedded is silently unsearchable, and
+    nothing about a successful /parse response suggests two more calls are
+    outstanding.
+
+    Safe to re-run. Each stage replaces its own output and embedding reuses
+    cached vectors, so re-ingesting an unchanged document costs no API calls.
+    """
+    document = documents_repo.get(conn, document_id)
+    if document is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    try:
+        result = pipeline.ingest(conn, settings, provider, document)
+    except parsers.ParserError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    except ProviderError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    fields = vars(result) | {"id": result.document_id}
+    fields.pop("document_id")
+    return IngestResponse(**fields)

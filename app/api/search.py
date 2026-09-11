@@ -40,6 +40,9 @@ class SearchResponse(BaseModel):
     # indexed yet, which otherwise looks identical to "nothing matched".
     searched_chunks: int
     model: str
+    # Set only when the search could not have worked, so an empty result is
+    # never mistaken for "nothing in your documents matched".
+    note: str | None = None
 
 
 @router.post("/search", response_model=SearchResponse, summary="Search indexed chunks")
@@ -70,4 +73,10 @@ def search(
         hits=[SearchHitResponse(**vars(hit)) for hit in hits],
         searched_chunks=searched,
         model=provider.model,
+        note=(
+            "No chunks are indexed for this model. Upload a document, then "
+            "POST /documents/{id}/ingest."
+            if searched == 0
+            else None
+        ),
     )

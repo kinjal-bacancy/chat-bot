@@ -189,3 +189,60 @@ def test_missing_api_key_names_the_variable_and_where_to_get_one():
 
     assert "GEMINI_API_KEY" in str(raised.value)
     assert "aistudio.google.com" in str(raised.value)
+
+
+# --- the whole pipeline in one call -----------------------------------
+
+
+def test_ingest_runs_every_stage(client: TestClient, embeddings: FakeEmbeddingProvider):
+    document_id = ingest(client, "a.txt", DOC)
+
+    body = client.post(f"/documents/{document_id}/ingest").json()
+
+    assert body["status"] == "indexed"
+    assert body["page_count"] == 1
+    assert body["chunk_count"] > 1
+    assert body["embedded"] == body["chunk_count"]
+    assert client.get(f"/documents/{document_id}").json()["status"] == "indexed"
+
+
+def test_ingest_leaves_the_document_searchable(
+    client: TestClient, embeddings: FakeEmbeddingProvider
+):
+    """The failure this endpoint exists to prevent: a parsed-but-unembedded
+    document that silently matches nothing."""
+    document_id = ingest(client, "a.txt", DOC)
+    client.post(f"/documents/{document_id}/ingest")
+
+    body = client.post("/search", json={"query": "anything"}).json()
+
+    assert body["searched_chunks"] > 0
+    assert body["note"] is None
+
+
+def test_re_ingesting_costs_no_api_calls(client: TestClient, embeddings: FakeEmbeddingProvider):
+    document_id = ingest(client, "a.txt", DOC)
+    client.post(f"/documents/{document_id}/ingest")
+    before = embeddings.texts_embedded
+
+    body = client.post(f"/documents/{document_id}/ingest").json()
+
+    assert body["embedded"] == 0
+    assert embeddings.texts_embedded == before
+
+
+def test_ingest_reports_a_parse_failure(client: TestClient, embeddings: FakeEmbeddingProvider):
+    from tests.factories import pdf_bytes
+
+    document_id = ingest(client, "scan.pdf", pdf_bytes([[]]))
+
+    response = client.post(f"/documents/{document_id}/ingest")
+
+    assert response.status_code == 422
+    assert client.get(f"/documents/{document_id}").json()["status"] == "failed"
+
+
+def test_ingesting_an_unknown_document_is_404(
+    client: TestClient, embeddings: FakeEmbeddingProvider
+):
+    assert client.post("/documents/nope/ingest").status_code == 404

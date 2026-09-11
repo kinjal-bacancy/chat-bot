@@ -48,3 +48,23 @@ Run the UI (in a second terminal):
 ```bash
 streamlit run ui/streamlit_app.py
 ```
+
+## Using the API
+
+Upload a document, then ingest it (parse, chunk and embed in one call):
+
+```bash
+ID=$(curl -s -X POST localhost:8000/documents -F "file=@yourfile.xlsx" | jq -r .id)
+curl -s -X POST localhost:8000/documents/$ID/ingest
+```
+
+Then search:
+
+```bash
+curl -s -X POST localhost:8000/search -H 'Content-Type: application/json' \
+  -d '{"query": "your question", "top_k": 5}'
+```
+
+The individual stages -- `/parse`, `/chunk`, `/embed` -- are also exposed
+separately, along with `/pages` and `/chunks` to read their output. They are
+for inspecting where a bad answer came from; `/ingest` is the normal path.

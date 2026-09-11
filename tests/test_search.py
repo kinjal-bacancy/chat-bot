@@ -145,3 +145,18 @@ def test_deleting_a_document_removes_it_from_search(
     client.delete(f"/documents/{document_id}")
 
     assert search(client).json()["searched_chunks"] == 0
+
+
+def test_empty_index_explains_itself(client: TestClient, embeddings: FakeEmbeddingProvider):
+    """Nothing indexed and nothing matched are different problems, and the
+    difference is not obvious from an empty hits list."""
+    body = search(client).json()
+
+    assert body["searched_chunks"] == 0
+    assert body["note"] and "/ingest" in body["note"]
+
+
+def test_a_real_search_carries_no_note(client: TestClient, embeddings: FakeEmbeddingProvider):
+    index(client)
+
+    assert search(client).json()["note"] is None
