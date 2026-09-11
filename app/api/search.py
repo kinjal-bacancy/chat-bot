@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import get_db, get_embedding_provider
 from app.config import Settings, get_settings
 from app.core import retrieval
+from app.core.retrieval import SearchMode
 from app.providers import EmbeddingProvider
 
 router = APIRouter(tags=["search"])
@@ -18,6 +19,9 @@ class SearchRequest(BaseModel):
     top_k: int | None = Field(default=None, ge=1, le=50)
     # Restrict to particular documents; omit to search everything indexed.
     document_ids: list[str] | None = None
+    # "dense" and "keyword" run a single retriever, for comparing the two on
+    # the same query rather than guessing which one found a result.
+    mode: SearchMode | None = None
     # Defaults to filtering nothing; raise it to suppress weak matches.
     min_score: float = Field(default=-1.0, ge=-1.0, le=1.0)
 
@@ -30,7 +34,12 @@ class SearchHitResponse(BaseModel):
     chunk_index: int
     heading: str | None
     text: str
+    # Fused rank score in hybrid mode; the retriever's own score otherwise.
     score: float
+    dense_score: float | None = None
+    dense_rank: int | None = None
+    keyword_score: float | None = None
+    keyword_rank: int | None = None
 
 
 class SearchResponse(BaseModel):
@@ -40,6 +49,7 @@ class SearchResponse(BaseModel):
     # indexed yet, which otherwise looks identical to "nothing matched".
     searched_chunks: int
     model: str
+    mode: str
     # Set only when the search could not have worked, so an empty result is
     # never mistaken for "nothing in your documents matched".
     note: str | None = None
@@ -59,11 +69,16 @@ def search(
     chunks that scored 0.8 is the model's fault, and one built on chunks that
     scored 0.3 is retrieval's.
     """
+    mode = request.mode or settings.search_mode
     hits, searched = retrieval.search(
         conn,
         provider,
         request.query,
         top_k=request.top_k or settings.search_top_k,
+        mode=mode,
+        candidates=settings.search_candidates,
+        dense_weight=settings.search_dense_weight,
+        keyword_weight=settings.search_keyword_weight,
         document_ids=request.document_ids,
         min_score=request.min_score,
     )
@@ -73,6 +88,7 @@ def search(
         hits=[SearchHitResponse(**vars(hit)) for hit in hits],
         searched_chunks=searched,
         model=provider.model,
+        mode=mode,
         note=(
             "No chunks are indexed for this model. Upload a document, then "
             "POST /documents/{id}/ingest."

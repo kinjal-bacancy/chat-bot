@@ -65,6 +65,18 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (sha256, model, dimensions)
     );
     """,
+    # 5: keyword index. SQLite's own FTS5, so the lexical half of hybrid
+    #    search needs no extra dependency and no second datastore. Backfills
+    #    any chunks that already exist.
+    """
+    CREATE VIRTUAL TABLE chunks_fts USING fts5(
+        chunk_id    UNINDEXED,
+        document_id UNINDEXED,
+        text
+    );
+    INSERT INTO chunks_fts (chunk_id, document_id, text)
+        SELECT id, document_id, text FROM chunks;
+    """,
 ]
 
 

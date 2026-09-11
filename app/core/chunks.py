@@ -33,6 +33,11 @@ def replace_for_document(
     """
     with conn:
         conn.execute("DELETE FROM chunks WHERE document_id = ?", (document_id,))
+        # FTS5 has no foreign keys, so its rows are maintained by hand. Kept
+        # in the same transaction as the chunks themselves: a keyword index
+        # that disagrees with the chunk table returns hits for text that is
+        # no longer there.
+        conn.execute("DELETE FROM chunks_fts WHERE document_id = ?", (document_id,))
         conn.executemany(
             """
             INSERT INTO chunks (
@@ -53,6 +58,15 @@ def replace_for_document(
                     chunk.sha256,
                 )
                 for chunk in chunks
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO chunks_fts (chunk_id, document_id, text) VALUES (?, ?, ?)",
+            [
+                (row["id"], document_id, row["text"])
+                for row in conn.execute(
+                    "SELECT id, text FROM chunks WHERE document_id = ?", (document_id,)
+                ).fetchall()
             ],
         )
 

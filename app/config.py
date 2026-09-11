@@ -40,6 +40,20 @@ class Settings(BaseSettings):
 
     # Retrieval
     search_top_k: int = 5
+    # How many candidates each retriever contributes before fusion. Wider
+    # than top_k on purpose: a chunk ranked 20th by one retriever and 2nd by
+    # the other should still surface.
+    search_candidates: int = 50
+    # Measured on the gem audit: dense 0.933 MRR, hybrid 0.883, keyword
+    # 0.803 over 10 questions. Hybrid is the usual recommendation and is
+    # kept ready, but defaulting to it here would be following advice over
+    # evidence. Revisit against the evaluation set on a larger corpus.
+    search_mode: str = "dense"    # hybrid | dense | keyword
+    # Relative pull of each retriever during fusion. Dense leads because
+    # keyword search answers every query, including ones with no rare terms
+    # in them, and an unweighted fusion lets it outvote a correct ranking.
+    search_dense_weight: float = 2.0
+    search_keyword_weight: float = 1.0
 
     # Which provider implementation to use.
     embedding_provider: EmbeddingProviderName = "gemini"

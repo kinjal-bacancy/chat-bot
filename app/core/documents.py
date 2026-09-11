@@ -116,6 +116,8 @@ def delete(conn: sqlite3.Connection, document_id: str) -> bool:
         return False
 
     conn.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+    # Chunks cascade; their FTS rows do not, since FTS5 has no foreign keys.
+    conn.execute("DELETE FROM chunks_fts WHERE document_id = ?", (document_id,))
     conn.commit()
     document.stored_path.unlink(missing_ok=True)
     return True

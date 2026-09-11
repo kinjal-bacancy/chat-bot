@@ -148,12 +148,18 @@ Not settled, and reasonable people differ:
   compared by brute force with numpy. A few thousand chunks compare in under a
   millisecond and there is no second service to run. The ceiling is real but
   explicit — around a hundred thousand chunks this wants a proper index.
-- **Hybrid weighting.** How to fuse BM25 with vector scores, and whether a
-  reranker is worth the latency. Mine will need tuning against the eval set.
-  Dense-only scores on real data come out compressed -- every hit on the gem
-  audit lands between 0.65 and 0.72, correct ones included -- so the ranking
-  is right but the margin is thin and no useful score threshold exists. That
-  is the gap step 8 has to close.
+- **Hybrid weighting.** Built and measured, and the result was not the
+  expected one. Over 10 questions against the 115-row gem audit: dense 0.933
+  MRR, hybrid 0.883, keyword 0.803. Hybrid lost, and was insensitive to the
+  fusion weight. The corpus is one document and 31 chunks, where dense
+  retrieval is already close to perfect and there is nothing for a second
+  retriever to add. Both retrievers ship, `SEARCH_MODE` selects, and the
+  default is dense until a larger evaluation set says otherwise. Worth
+  measuring on your own corpus rather than taking either default on faith.
+- **Dense scores are compressed.** Every hit on the gem audit lands between
+  0.65 and 0.72, correct ones included. The ranking is right but the margin is
+  thin, so there is no score threshold that means "actually relevant" -- which
+  matters for deciding when to refuse to answer.
 
 ## Traps
 
@@ -184,13 +190,14 @@ Things I expect to cost people time:
 
 ## Status
 
-Steps 1-7 complete: scaffold, `/health`, document upload with content-type
+Steps 1-8 complete: scaffold, `/health`, document upload with content-type
 validation, streamed size limits and hash-based deduplication, text
 extraction for PDF / DOCX / TXT / MD / HTML / XLSX / CSV with running-header
 stripping and page numbers carried through for citations, block-atomic
 chunking with heading context and whole-block overlap, Gemini embeddings
 cached by chunk hash with vectors stored in SQLite, and `POST /search`
-returning scored chunks with their provenance.
+returning scored chunks with their provenance, in dense, keyword (SQLite
+FTS5/BM25) or fused hybrid mode.
 Providers are configured for Gemini (`gemini-3.8-flash` for generation,
 `gemini-embedding-001` for embeddings) but no provider code exists yet --
 that lands with embeddings in step 6. Chunking onward is planned, not built.
