@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     debug: bool = False
     data_dir: Path = Path("./data")
 
+    # Reject uploads larger than this. Enforced while streaming, so an
+    # oversized file is never held in memory or fully written to disk.
+    max_upload_mb: int = 25
+
     # Which provider implementation to use. Validated properly in the step
     # that introduces the provider registry.
     embedding_provider: str = "local"
@@ -32,6 +36,14 @@ class Settings(BaseSettings):
     @property
     def uploads_dir(self) -> Path:
         return self.data_dir / "uploads"
+
+    @property
+    def db_path(self) -> Path:
+        return self.data_dir / "app.db"
+
+    @property
+    def max_upload_bytes(self) -> int:
+        return self.max_upload_mb * 1024 * 1024
 
 
 @lru_cache

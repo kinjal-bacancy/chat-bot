@@ -154,4 +154,6 @@ Things I expect to cost people time:
 
 ## Status
 
-Step 1 complete. Everything past it is planned, not built.
+Steps 1-3 complete: scaffold, `/health`, and document upload with
+content-type validation, streamed size limits and hash-based deduplication.
+Parsing onward is planned, not built.
