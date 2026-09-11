@@ -133,7 +133,10 @@ Not settled, and reasonable people differ:
 
 - **Chunk size and strategy.** Fixed-token, recursive, or semantic. Big chunks
   retrieve less precisely; small chunks lose the context needed to answer. This
-  has more effect on output quality than model choice does.
+  has more effect on output quality than model choice does. Mine packs whole
+  blocks to a 1200-character target with 200 characters of whole-block
+  overlap, and prepends the enclosing heading to every chunk so a retrieved
+  chunk still says what it is about.
 - **Embedding dimensions.** `gemini-embedding-001` returns 3072 by default but
   is trained so a truncated prefix still works; 768 is Google's recommendation
   and gives a four-times smaller index. Changing it invalidates every stored
@@ -162,16 +165,21 @@ Things I expect to cost people time:
 - **Losing page numbers during parsing.** Easy to do, and it makes citations
   impossible to add later without redoing ingestion. Carry the metadata from
   the start.
+- **Never split a record.** Half a spreadsheet row -- a version with no gem
+  name -- is worse than none, because it still retrieves and then misleads.
+  Split on blank lines first and pack whole blocks, rather than slicing at a
+  character offset.
 - **Re-indexing friction.** You will change your chunking strategy several
   times. If re-indexing is slow or manual, you'll avoid doing it and settle for
   a worse strategy. Make it one command.
 
 ## Status
 
-Steps 1-4 complete: scaffold, `/health`, document upload with content-type
-validation, streamed size limits and hash-based deduplication, and text
-extraction for PDF / DOCX / TXT / MD / HTML with running-header stripping
-and page numbers carried through for citations.
+Steps 1-5 complete: scaffold, `/health`, document upload with content-type
+validation, streamed size limits and hash-based deduplication, text
+extraction for PDF / DOCX / TXT / MD / HTML / XLSX / CSV with running-header
+stripping and page numbers carried through for citations, and block-atomic
+chunking with heading context and whole-block overlap.
 Providers are configured for Gemini (`gemini-3.8-flash` for generation,
 `gemini-embedding-001` for embeddings) but no provider code exists yet --
 that lands with embeddings in step 6. Chunking onward is planned, not built.

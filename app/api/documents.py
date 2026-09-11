@@ -7,6 +7,8 @@ from pydantic import BaseModel
 
 from app.api.deps import get_db
 from app.config import Settings, get_settings
+from app.core import chunking
+from app.core import chunks as chunks_repo
 from app.core import documents as documents_repo
 from app.core import pages as pages_repo
 from app.core import parsers, storage
@@ -216,4 +218,120 @@ def get_document_pages(
     return [
         PageResponse(number=page.number, text=page.text)
         for page in pages_repo.list_for_document(conn, document_id)
+    ]
+
+
+class ChunkResponse(BaseModel):
+    index: int
+    page_number: int
+    heading: str | None
+    text: str
+    characters: int
+    char_start: int
+    char_end: int
+
+
+class ChunkSummary(BaseModel):
+    id: str
+    status: str
+    chunk_count: int
+    total_characters: int
+    average_characters: int
+    settings: dict[str, int]
+
+
+@router.post(
+    "/{document_id}/chunk",
+    response_model=ChunkSummary,
+    summary="Split a parsed document into chunks",
+)
+def chunk_document(
+    document_id: str,
+    settings: Settings = Depends(get_settings),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> ChunkSummary:
+    """Chunk a document's extracted text.
+
+    Safe to re-run: chunks are replaced, not appended, because tuning the
+    chunk size is an iterative business.
+    """
+    document = documents_repo.get(conn, document_id)
+    if document is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    stored_pages = pages_repo.list_for_document(conn, document_id)
+    if not stored_pages:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=(
+                f"Document has no extracted text. "
+                f"POST /documents/{document_id}/parse first."
+            ),
+        )
+
+    produced = chunking.chunk_pages(
+        [(page.number, page.text) for page in stored_pages],
+        target_chars=settings.chunk_target_chars,
+        overlap_chars=settings.chunk_overlap_chars,
+        max_chars=settings.chunk_max_chars,
+    )
+
+    chunks_repo.replace_for_document(conn, document_id, produced)
+    documents_repo.set_status(conn, document_id, "chunked")
+
+    total = sum(len(chunk.text) for chunk in produced)
+    return ChunkSummary(
+        id=document_id,
+        status="chunked",
+        chunk_count=len(produced),
+        total_characters=total,
+        average_characters=round(total / len(produced)) if produced else 0,
+        settings={
+            "target_chars": settings.chunk_target_chars,
+            "overlap_chars": settings.chunk_overlap_chars,
+            "max_chars": settings.chunk_max_chars,
+        },
+    )
+
+
+@router.get(
+    "/{document_id}/chunks",
+    response_model=list[ChunkResponse],
+    summary="Read the chunks",
+)
+def get_document_chunks(
+    document_id: str,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[ChunkResponse]:
+    """Return chunks exactly as they will be embedded.
+
+    The point of this endpoint is to be read. Chunk boundaries are the single
+    biggest influence on retrieval quality, and a bad boundary is obvious on
+    sight but invisible in an aggregate metric.
+    """
+    document = documents_repo.get(conn, document_id)
+    if document is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    stored = chunks_repo.list_for_document(conn, document_id)
+    if not stored:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=(
+                f"Document has not been chunked yet. "
+                f"POST /documents/{document_id}/chunk first."
+            ),
+        )
+
+    return [
+        ChunkResponse(
+            index=chunk.chunk_index,
+            page_number=chunk.page_number,
+            heading=chunk.heading,
+            text=chunk.text,
+            characters=len(chunk.text),
+            char_start=chunk.char_start,
+            char_end=chunk.char_end,
+        )
+        for chunk in stored
     ]

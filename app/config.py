@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     # oversized file is never held in memory or fully written to disk.
     max_upload_mb: int = 25
 
+    # Chunking, in characters. Characters rather than tokens because Gemini's
+    # tokeniser is server-side, and roughly four characters per token is close
+    # enough for sizing. Changing any of these requires a re-index.
+    chunk_target_chars: int = 1200   # ~300 tokens
+    chunk_overlap_chars: int = 200   # carried as whole blocks, never a fragment
+    chunk_max_chars: int = 2000      # a single block above this is force-split
+
     # Which provider implementation to use.
     embedding_provider: EmbeddingProviderName = "gemini"
     llm_provider: LLMProviderName = "gemini"

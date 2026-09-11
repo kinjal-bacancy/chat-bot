@@ -36,6 +36,23 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (document_id, page_number)
     );
     """,
+    # 3: chunks
+    """
+    CREATE TABLE chunks (
+        id           TEXT    PRIMARY KEY,
+        document_id  TEXT    NOT NULL REFERENCES documents (id) ON DELETE CASCADE,
+        page_number  INTEGER NOT NULL,
+        chunk_index  INTEGER NOT NULL,
+        heading      TEXT,
+        text         TEXT    NOT NULL,
+        char_start   INTEGER NOT NULL,
+        char_end     INTEGER NOT NULL,
+        sha256       TEXT    NOT NULL,
+        UNIQUE (document_id, chunk_index)
+    );
+    CREATE INDEX idx_chunks_document ON chunks (document_id, chunk_index);
+    CREATE INDEX idx_chunks_sha256 ON chunks (sha256);
+    """,
 ]
 
 
