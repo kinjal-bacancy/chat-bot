@@ -107,3 +107,37 @@ def test_the_server_delay_is_used_instead_of_backoff(monkeypatch):
 
     assert gemini._call_with_retry(rate_limited, "generation") == "ok"
     assert slept == [45.0], "backoff was used instead of the requested delay"
+
+
+def test_a_daily_quota_is_not_retried(monkeypatch):
+    """It looks like a per-minute limit and even carries a retryDelay, but no
+    amount of waiting inside one process will clear it."""
+    monkeypatch.setattr(gemini.time, "sleep", lambda _: None)
+    attempts = []
+
+    def exhausted():
+        attempts.append(1)
+        raise Boom(
+            "429 RESOURCE_EXHAUSTED 'quotaId': "
+            "'GenerateRequestsPerDayPerProjectPerModel-FreeTier' 'retryDelay': '57s'"
+        )
+
+    with pytest.raises(gemini.ProviderError, match="daily quota"):
+        gemini._call_with_retry(exhausted, "generation")
+    assert len(attempts) == 1, "a daily quota was retried"
+
+
+def test_a_per_minute_quota_is_still_retried(monkeypatch):
+    monkeypatch.setattr(gemini.time, "sleep", lambda _: None)
+    attempts = []
+
+    def limited():
+        attempts.append(1)
+        if len(attempts) < 2:
+            raise Boom(
+                "429 RESOURCE_EXHAUSTED 'quotaId': "
+                "'GenerateRequestsPerMinutePerProjectPerModel-FreeTier'"
+            )
+        return "ok"
+
+    assert gemini._call_with_retry(limited, "generation") == "ok"

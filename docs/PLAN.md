@@ -203,11 +203,18 @@ Things I expect to cost people time:
   backoff on both, around embedding *and* generation -- it is easy to add it
   to one and forget the other. Note that a *daily* quota looks identical to a
   per-minute one in the error, and no amount of backoff will clear it.
-- **Check the free-tier quota before choosing a model.** `gemini-3.8-flash`
-  allows 20 generate_content requests per day on the free tier -- enough to
-  exhaust during a single evaluation run -- and answered in 15-35s.
-  `gemini-3.5-flash` answered the same prompt in 1.4s with quota to spare. The
-  model name that sounds newest is not automatically the one to build on.
+- **Check the free-tier quota before choosing a model.** Both models tried
+  here allow 20 generate_content requests per day, which a single 20-question
+  evaluation run exhausts -- the answer-quality numbers could not be collected
+  at all in one sitting. There is also a per-minute limit (5 for
+  `gemini-3.5-flash`) that batch work must pace itself against. Latency
+  differed by more than an order of magnitude between models: 15-35s for
+  `gemini-3.8-flash` against 1.4s for `gemini-3.5-flash`. The model whose name
+  sounds newest is not automatically the one to build on.
+- **A per-day quota is not a retryable error.** It returns the same 429 as a
+  per-minute limit and even carries a `retryDelay`, so blind retry spends
+  minutes arriving at the same failure. Read the `quotaId`: `PerDay` means
+  stop and tell the user, `PerMinute` means wait.
 - **Weak ground truth produces confident wrong conclusions.** The first
   hybrid-vs-dense comparison used "does a rare term appear in the chunk" as
   its relevance judgement, and reversed the real answer. Write the evaluation

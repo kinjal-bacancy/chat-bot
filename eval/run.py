@@ -22,7 +22,7 @@ from pathlib import Path
 
 from app.config import get_settings
 from app.core import answering, database, retrieval
-from app.providers import build_embedding_provider, build_llm_provider
+from app.providers import ProviderError, build_embedding_provider, build_llm_provider
 
 DATASET = Path(__file__).parent / "dataset.json"
 MODES = ("dense", "keyword", "hybrid")
@@ -97,7 +97,8 @@ def evaluate_answers(conn, embedder, llm, cases, mode: str, top_k: int, settings
     not exceeding it.
     """
     results = {"answered": 0, "answerable": 0, "refused_correctly": 0,
-               "should_refuse": 0, "wrongly_refused": [], "wrongly_answered": []}
+               "should_refuse": 0, "wrongly_refused": [], "wrongly_answered": [],
+               "stopped_early": None}
 
     for position, case in enumerate(cases):
         if delay and position:
@@ -112,10 +113,16 @@ def evaluate_answers(conn, embedder, llm, cases, mode: str, top_k: int, settings
         if not sources:
             answer = answering.Answer("", [], [], True, llm.model)
         else:
-            raw = llm.generate(
-                answering.SYSTEM_PROMPT,
-                answering.build_prompt(case["question"], sources),
-            )
+            try:
+                raw = llm.generate(
+                    answering.SYSTEM_PROMPT,
+                    answering.build_prompt(case["question"], sources),
+                )
+            except ProviderError as exc:
+                # Report what was measured rather than losing it to a
+                # traceback. A quota running out mid-run is ordinary.
+                results["stopped_early"] = str(exc)
+                return results
             answer = answering.assemble(raw, sources, llm.model)
 
         if case.get("should_refuse"):
@@ -188,6 +195,9 @@ def main() -> int:
         results = evaluate_answers(
             conn, embedder, llm, cases, mode, args.top_k, settings, args.delay
         )
+        if results["stopped_early"]:
+            print(f"\nstopped early: {results['stopped_early']}")
+            print("partial results below\n")
         print(f"\n{'answered when answerable':<30} "
               f"{results['answered']}/{results['answerable']}")
         print(f"{'refused when unanswerable':<30} "

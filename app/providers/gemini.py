@@ -32,6 +32,16 @@ _RETRY_DELAY = re.compile(
 )
 
 
+# A per-day quota looks exactly like a per-minute one in the status code and
+# even carries a retryDelay, but no amount of waiting inside one process will
+# clear it. Retrying spends minutes to arrive at the same failure.
+_DAILY_QUOTA = re.compile(r"PerDay", re.IGNORECASE)
+
+
+def _is_daily_quota(error: Exception) -> bool:
+    return "429" in str(error) and bool(_DAILY_QUOTA.search(str(error)))
+
+
 def _requested_delay(error: Exception) -> float | None:
     match = _RETRY_DELAY.search(str(error))
     return min(float(match.group(1)), _MAX_WAIT_SECONDS) if match else None
@@ -60,6 +70,14 @@ def _call_with_retry(operation, describe: str):
         try:
             return operation()
         except Exception as exc:
+            if _is_daily_quota(exc):
+                raise ProviderError(
+                    f"Gemini {describe} failed: the free-tier daily quota for "
+                    f"this model is exhausted. It resets at midnight Pacific. "
+                    f"Switch LLM_MODEL, or enable billing at "
+                    f"https://ai.dev/rate-limit."
+                ) from exc
+
             if not _is_retryable(exc):
                 raise ProviderError(f"Gemini {describe} failed: {exc}") from exc
 

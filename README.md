@@ -103,6 +103,12 @@ holds up better as a corpus grows and rare exact terms start to matter. Write
 your own `eval/dataset.json` and re-measure -- the numbers above describe one
 document, not your data.
 
+Answer-quality figures are not filled in: the free tier allows 20 generations
+per day per model, which one `--answers` run over 20 questions exhausts. The
+runner paces itself and reports partial results when the quota runs out. With
+billing enabled, or spread across two days, it reports how often the system
+answered when it should and refused when it should.
+
 ## Design notes
 
 Four decisions that shaped the rest:
@@ -142,6 +148,20 @@ tests/          156 tests, no network calls
 
 `app/core` imports no web framework and no vendor SDK, which is what lets the
 whole pipeline be tested against fake providers.
+
+## Free-tier limits worth knowing
+
+Measured on this project, not read off a page:
+
+| Limit | Effect |
+|---|---|
+| 20 generations per day, per model | One evaluation run exhausts it |
+| 5 generations per minute (`gemini-3.5-flash`) | Pace batch work, or wait out 429s |
+| `gemini-3.8-flash` latency | 15-35s per answer; `gemini-3.5-flash` answered in 1.4s |
+
+A per-day quota is indistinguishable from a per-minute one in the error, and
+even carries a `retryDelay` -- but no amount of waiting clears it, so the
+provider fails fast on it and retries only the per-minute kind.
 
 ## Tests
 
