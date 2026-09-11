@@ -7,7 +7,7 @@ later stage of the pipeline is indifferent to what was uploaded.
 from pathlib import Path
 from typing import Callable
 
-from app.core.parsers import docx, html, pdf, text
+from app.core.parsers import docx, html, pdf, spreadsheet, text
 from app.core.parsers.base import (
     NoExtractableText,
     Page,
@@ -35,6 +35,10 @@ PARSERS: dict[str, Callable[[Path], ParsedDocument]] = {
     ".md": text.parse,
     ".html": html.parse,
     ".htm": html.parse,
+    ".xlsx": spreadsheet.parse,
+    ".xlsm": spreadsheet.parse,
+    ".csv": spreadsheet.parse,
+    ".tsv": spreadsheet.parse,
 }
 
 

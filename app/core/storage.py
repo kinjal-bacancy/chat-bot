@@ -20,6 +20,10 @@ ALLOWED_EXTENSIONS: dict[str, str] = {
     ".md": "text/markdown",
     ".html": "text/html",
     ".htm": "text/html",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12",
+    ".csv": "text/csv",
+    ".tsv": "text/tab-separated-values",
 }
 
 _CHUNK_BYTES = 1024 * 1024  # read the stream 1 MiB at a time

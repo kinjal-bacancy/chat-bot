@@ -36,3 +36,17 @@ def docx_bytes(paragraphs: list[str], tables: list[list[list[str]]] | None = Non
                 table.cell(row_index, cell_index).text = value
     document.save(buffer)
     return buffer.getvalue()
+
+
+def xlsx_bytes(sheets: dict[str, list[list]]) -> bytes:
+    import openpyxl
+
+    buffer = io.BytesIO()
+    workbook = openpyxl.Workbook()
+    workbook.remove(workbook.active)
+    for name, rows in sheets.items():
+        worksheet = workbook.create_sheet(title=name)
+        for row in rows:
+            worksheet.append(row)
+    workbook.save(buffer)
+    return buffer.getvalue()

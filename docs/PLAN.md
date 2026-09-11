@@ -20,7 +20,7 @@ these calls are genuinely arguable.
 
 **In scope**
 
-- Upload PDF / DOCX / TXT / MD / HTML documents
+- Upload PDF / DOCX / TXT / MD / HTML / XLSX / CSV documents
 - Ask questions answered *only* from those documents
 - Citations pointing back to the exact source chunk
 - Visible refusal when the retrieved context can't support an answer
@@ -79,7 +79,8 @@ Eleven steps, each independently runnable before the next begins.
 
 ### Phase 2 — Ingestion (~5h)
 3. **Document upload** — `POST /documents`, persist file + metadata row.
-4. **Parsing** — PDF / DOCX / TXT / MD / HTML -> normalized text, page numbers kept.
+4. **Parsing** — PDF / DOCX / TXT / MD / HTML / XLSX / CSV -> normalized text,
+   page numbers kept.
 5. **Chunking** — structure-aware overlapping chunks, inspectable via API.
 6. **Embeddings + vector store** — embed chunks, persist vectors.
 
@@ -152,6 +153,12 @@ Things I expect to cost people time:
 - **PDF text extraction is genuinely hard.** Multi-column layouts, tables and
   headers/footers all corrupt naive extraction, and the damage is invisible
   until answers get strange. Print the extracted text and read it.
+- **Never ingest a rendering of structured data.** A spreadsheet exported to
+  PDF is paginated by column, so one row's cells land on different pages with
+  nothing connecting them -- confirmed on a real 115-row sheet here, where the
+  gem, its version and its status ended up three page-groups apart. No parser
+  or chunker can recover that; the relationship is gone at export time. Ingest
+  the .xlsx or .csv instead, and render each row as one labelled record.
 - **Losing page numbers during parsing.** Easy to do, and it makes citations
   impossible to add later without redoing ingestion. Carry the metadata from
   the start.
