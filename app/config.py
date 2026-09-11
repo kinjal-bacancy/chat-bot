@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # recommended size and makes the index four times smaller for a small
     # quality cost. Changing this invalidates every stored vector.
     embedding_dimensions: int = 768
+    # Texts per embedding request. Larger means fewer round trips but a
+    # coarser retry unit when the free tier rate-limits a batch.
+    embedding_batch_size: int = 32
 
     @property
     def uploads_dir(self) -> Path:

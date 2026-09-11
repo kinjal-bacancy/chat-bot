@@ -7,6 +7,7 @@ from fastapi import Depends
 
 from app.config import Settings, get_settings
 from app.core import database
+from app.providers import EmbeddingProvider, build_embedding_provider
 
 
 def get_db(settings: Settings = Depends(get_settings)) -> Iterator[sqlite3.Connection]:
@@ -20,3 +21,14 @@ def get_db(settings: Settings = Depends(get_settings)) -> Iterator[sqlite3.Conne
         yield conn
     finally:
         conn.close()
+
+
+def get_embedding_provider(
+    settings: Settings = Depends(get_settings),
+) -> EmbeddingProvider:
+    """The configured embedding backend.
+
+    A dependency rather than a module-level singleton so tests can substitute
+    a fake and never reach the network.
+    """
+    return build_embedding_provider(settings)

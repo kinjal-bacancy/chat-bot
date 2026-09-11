@@ -5,14 +5,16 @@ import sqlite3
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from pydantic import BaseModel
 
-from app.api.deps import get_db
+from app.api.deps import get_db, get_embedding_provider
 from app.config import Settings, get_settings
 from app.core import chunking
 from app.core import chunks as chunks_repo
+from app.core import embeddings as embeddings_repo
 from app.core import documents as documents_repo
 from app.core import pages as pages_repo
 from app.core import parsers, storage
 from app.core.documents import Document
+from app.providers import EmbeddingProvider, ProviderError
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -335,3 +337,61 @@ def get_document_chunks(
         )
         for chunk in stored
     ]
+
+
+class EmbedResponse(BaseModel):
+    id: str
+    status: str
+    chunk_count: int
+    embedded: int
+    reused: int
+    model: str
+    dimensions: int
+
+
+@router.post(
+    "/{document_id}/embed",
+    response_model=EmbedResponse,
+    summary="Embed a document's chunks",
+)
+def embed_document(
+    document_id: str,
+    provider: EmbeddingProvider = Depends(get_embedding_provider),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> EmbedResponse:
+    """Ensure every chunk has a vector, reusing cached ones where the text is
+    unchanged.
+
+    Re-running after a chunking change costs API calls only for text that
+    actually differs, which is what makes tuning chunk size affordable.
+    """
+    document = documents_repo.get(conn, document_id)
+    if document is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    if chunks_repo.count_for_document(conn, document_id) == 0:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=(
+                f"Document has no chunks. "
+                f"POST /documents/{document_id}/chunk first."
+            ),
+        )
+
+    try:
+        run = embeddings_repo.embed_document(conn, provider, document_id)
+    except ProviderError as exc:
+        documents_repo.set_status(conn, document_id, "failed", error=str(exc))
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    documents_repo.set_status(conn, document_id, "indexed")
+
+    return EmbedResponse(
+        id=document_id,
+        status="indexed",
+        chunk_count=run.chunk_count,
+        embedded=run.embedded,
+        reused=run.reused,
+        model=run.model,
+        dimensions=run.dimensions,
+    )

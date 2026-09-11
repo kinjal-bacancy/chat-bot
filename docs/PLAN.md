@@ -82,7 +82,8 @@ Eleven steps, each independently runnable before the next begins.
 4. **Parsing** — PDF / DOCX / TXT / MD / HTML / XLSX / CSV -> normalized text,
    page numbers kept.
 5. **Chunking** — structure-aware overlapping chunks, inspectable via API.
-6. **Embeddings + vector store** — embed chunks, persist vectors.
+6. **Embeddings + vector store** — embed chunks, persist vectors, cache by
+   chunk hash so re-chunking is cheap.
 
 ### Phase 3 — Retrieval & generation (~6h)
 7. **Retrieval** — `POST /search` returns top-k chunks with scores.
@@ -142,7 +143,11 @@ Not settled, and reasonable people differ:
   and gives a four-times smaller index. Changing it invalidates every stored
   vector, so it is worth settling before you index anything large.
 - **Vector store.** Chroma, LanceDB, FAISS, or pgvector. For this scale it
-  genuinely does not matter much — pick on API ergonomics, not benchmarks.
+  genuinely does not matter much — pick on API ergonomics, not benchmarks. I
+  ended up with neither: float32 blobs in the SQLite database already there,
+  compared by brute force with numpy. A few thousand chunks compare in under a
+  millisecond and there is no second service to run. The ceiling is real but
+  explicit — around a hundred thousand chunks this wants a proper index.
 - **Hybrid weighting.** How to fuse BM25 with vector scores, and whether a
   reranker is worth the latency. Mine will need tuning against the eval set.
 
@@ -175,11 +180,12 @@ Things I expect to cost people time:
 
 ## Status
 
-Steps 1-5 complete: scaffold, `/health`, document upload with content-type
+Steps 1-6 complete: scaffold, `/health`, document upload with content-type
 validation, streamed size limits and hash-based deduplication, text
 extraction for PDF / DOCX / TXT / MD / HTML / XLSX / CSV with running-header
-stripping and page numbers carried through for citations, and block-atomic
-chunking with heading context and whole-block overlap.
+stripping and page numbers carried through for citations, block-atomic
+chunking with heading context and whole-block overlap, and Gemini embeddings
+cached by chunk hash with vectors stored in SQLite.
 Providers are configured for Gemini (`gemini-3.8-flash` for generation,
 `gemini-embedding-001` for embeddings) but no provider code exists yet --
 that lands with embeddings in step 6. Chunking onward is planned, not built.

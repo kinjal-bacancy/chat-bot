@@ -4,8 +4,10 @@ from typing import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.deps import get_embedding_provider
 from app.config import Settings, get_settings
 from app.main import create_app
+from tests.fakes import FakeEmbeddingProvider
 
 MAX_UPLOAD_MB = 1  # keep the oversized-upload test cheap
 
@@ -30,14 +32,29 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
-def client(data_dir: Path) -> Iterator[TestClient]:
+def app(data_dir: Path):
+    """The application, exposed so tests can override dependencies on it."""
+    return create_app()
+
+
+@pytest.fixture
+def client(app) -> Iterator[TestClient]:
     """A client whose app has completed startup.
 
     Used as a context manager on purpose: that is what runs FastAPI's lifespan
     hook, which creates the directories and applies migrations.
     """
-    with TestClient(create_app()) as test_client:
+    with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def embeddings(app) -> FakeEmbeddingProvider:
+    """Substitute a deterministic provider. No test may reach the network:
+    it would be slow, need a key, and fail on someone else's rate limit."""
+    provider = FakeEmbeddingProvider()
+    app.dependency_overrides[get_embedding_provider] = lambda: provider
+    return provider
 
 
 @pytest.fixture

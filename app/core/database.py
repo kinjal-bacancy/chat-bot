@@ -53,6 +53,18 @@ MIGRATIONS: list[str] = [
     CREATE INDEX idx_chunks_document ON chunks (document_id, chunk_index);
     CREATE INDEX idx_chunks_sha256 ON chunks (sha256);
     """,
+    # 4: cached chunk embeddings, keyed by the text's hash rather than by
+    #    chunk id, so re-chunking reuses vectors for text that did not change
+    """
+    CREATE TABLE chunk_embeddings (
+        sha256      TEXT    NOT NULL,
+        model       TEXT    NOT NULL,
+        dimensions  INTEGER NOT NULL,
+        vector      BLOB    NOT NULL,
+        created_at  TEXT    NOT NULL,
+        PRIMARY KEY (sha256, model, dimensions)
+    );
+    """,
 ]
 
 
