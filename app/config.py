@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     chunk_overlap_chars: int = 200   # carried as whole blocks, never a fragment
     chunk_max_chars: int = 2000      # a single block above this is force-split
 
+    # Retrieval
+    search_top_k: int = 5
+
     # Which provider implementation to use.
     embedding_provider: EmbeddingProviderName = "gemini"
     llm_provider: LLMProviderName = "gemini"

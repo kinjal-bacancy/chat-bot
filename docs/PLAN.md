@@ -150,6 +150,10 @@ Not settled, and reasonable people differ:
   explicit — around a hundred thousand chunks this wants a proper index.
 - **Hybrid weighting.** How to fuse BM25 with vector scores, and whether a
   reranker is worth the latency. Mine will need tuning against the eval set.
+  Dense-only scores on real data come out compressed -- every hit on the gem
+  audit lands between 0.65 and 0.72, correct ones included -- so the ranking
+  is right but the margin is thin and no useful score threshold exists. That
+  is the gap step 8 has to close.
 
 ## Traps
 
@@ -180,12 +184,13 @@ Things I expect to cost people time:
 
 ## Status
 
-Steps 1-6 complete: scaffold, `/health`, document upload with content-type
+Steps 1-7 complete: scaffold, `/health`, document upload with content-type
 validation, streamed size limits and hash-based deduplication, text
 extraction for PDF / DOCX / TXT / MD / HTML / XLSX / CSV with running-header
 stripping and page numbers carried through for citations, block-atomic
-chunking with heading context and whole-block overlap, and Gemini embeddings
-cached by chunk hash with vectors stored in SQLite.
+chunking with heading context and whole-block overlap, Gemini embeddings
+cached by chunk hash with vectors stored in SQLite, and `POST /search`
+returning scored chunks with their provenance.
 Providers are configured for Gemini (`gemini-3.8-flash` for generation,
 `gemini-embedding-001` for embeddings) but no provider code exists yet --
 that lands with embeddings in step 6. Chunking onward is planned, not built.
