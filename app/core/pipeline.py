@@ -15,8 +15,9 @@ from app.core import chunks as chunks_repo
 from app.core import documents as documents_repo
 from app.core import embeddings as embeddings_repo
 from app.core import pages as pages_repo
-from app.core import parsers
+from app.core import parsers, storage
 from app.core.documents import Document
+from app.core.storage import _AsyncReadable
 from app.providers.base import EmbeddingProvider, ProviderError
 
 
@@ -41,6 +42,35 @@ class IngestResult:
     reused: int
     model: str
     dimensions: int
+
+
+async def store_upload(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    source: _AsyncReadable,
+    filename: str | None,
+) -> tuple[Document, bool]:
+    """Save an upload and record it. Returns the document and whether these
+    bytes were already on file.
+
+    Re-uploading identical bytes returns the existing record rather than
+    creating a second copy. Duplicate documents would seed near-identical
+    chunks that compete for the same top-k slots and crowd out genuinely
+    distinct sources.
+    """
+    stored = await storage.save_upload(
+        source,
+        filename,
+        uploads_dir=settings.uploads_dir,
+        max_bytes=settings.max_upload_bytes,
+    )
+
+    existing = documents_repo.find_by_sha256(conn, stored.sha256)
+    if existing is not None:
+        stored.path.unlink(missing_ok=True)  # drop the redundant copy
+        return existing, True
+
+    return documents_repo.create(conn, stored, filename=filename or "untitled"), False
 
 
 def parse(conn: sqlite3.Connection, document: Document) -> ParseResult:

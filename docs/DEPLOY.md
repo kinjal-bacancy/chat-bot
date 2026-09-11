@@ -1,70 +1,81 @@
 # Deploying the demo
 
-One container runs both processes: uvicorn on an internal port, Streamlit on
-the public one. The split that keeps the pipeline testable in development does
-not warrant two deployments for a demo.
+The UI reaches the pipeline two ways, chosen by whether `RAG_API_URL` is set:
 
-Target here is Hugging Face Spaces -- free, no credit card, and Docker Spaces
-need no platform-specific code.
+- **set** — HTTP to a FastAPI process. What you run locally, and what the
+  container does.
+- **unset** — in-process, calling `app.core` directly. For hosts that run a
+  single process.
+
+The UI branches on neither; `ui/backend.py` picks, and both present the same
+methods. A test asserts their signatures stay identical, because a method
+added to one and not the other would only break in the deployment nobody runs
+locally.
+
+That the in-process path is possible at all is the payoff of `app/core`
+importing no web framework.
 
 ## Before you start
 
 **The free Gemini tier allows 20 generations per day, per model.** A demo
-shared with several people will run out, and every question after that returns
-a clear error saying so. That is the binding constraint on a public demo, not
-the hosting. Enabling billing on the Google Cloud project removes the cap.
+shared with several people runs out quickly, and every question after that
+returns a clear error saying so. This is the binding constraint on a public
+demo, not the hosting. Enabling billing removes it.
 
-**Nothing persists.** The free tier has no disk, so uploads and the index live
-only as long as the container. A restart empties it. This is why the demo
-starts with nothing indexed rather than shipping a corpus.
+**Nothing persists.** Free hosts have no disk. Uploads and the index live only
+as long as the process, and a restart empties them. That is why the demo ships
+with nothing indexed.
 
 **There is no authentication.** Anyone with the URL can upload documents and
-spend your quota. Acceptable for a short-lived demo; not for anything else.
+spend your quota. Fine for a short-lived demo; take it down afterwards.
 
-## Steps
+## Streamlit Community Cloud (free, no card)
 
-1. Create a Space at https://huggingface.co/new-space
-   - **SDK: Docker**, blank template
-   - Visibility: public, or private if you would rather invite people
+Runs one process, so the in-process backend is used. Nothing to configure --
+`RAG_API_URL` is simply absent there.
 
-2. Add the API key: Space **Settings > Variables and secrets > New secret**
-   - Name `GEMINI_API_KEY`, value your key
-   - A *secret*, not a variable -- variables are visible to anyone who can
-     read the Space
+1. Push to GitHub.
 
-3. Deploy the current commit:
+2. At https://share.streamlit.io, **Create app** from your repository.
+   - **Main file path:** `ui/streamlit_app.py`
+   - Branch: `main`
 
-   ```bash
-   ./deploy/to-space.sh https://huggingface.co/spaces/<user>/<space>
+3. **Advanced settings > Secrets**, in TOML:
+
+   ```toml
+   GEMINI_API_KEY = "your-key"
    ```
 
-   Pushing prompts for your Hugging Face username and an access token
-   (Settings > Access Tokens, write scope). Not your account password.
+   The app copies secrets into the environment at startup, because settings
+   are read from environment variables and Streamlit supplies secrets through
+   `st.secrets` instead.
 
-4. Watch the build in the Space's **Logs** tab. First build takes a few
-   minutes; later ones reuse cached layers.
+4. Deploy. First build installs dependencies and takes a few minutes.
 
-Redeploy after any change by committing and running the same script again.
+Apps sleep after 12 hours idle and wake on the next visit. Redeploy by
+pushing to `main`.
+
+## Elsewhere
+
+`Dockerfile` runs both processes in one container -- uvicorn on an internal
+port, Streamlit on the public one -- and works anywhere that builds a
+Dockerfile and lets you set `PORT`: Render's free tier, Railway, Fly.io, a
+VPS. `deploy/to-space.sh` pushes to a Hugging Face Space, though Docker Spaces
+now require a paid plan.
+
+Render's free tier spins services down after 15 minutes idle, so most visits
+pay a one-minute cold start. That is the reason to prefer Streamlit Cloud for
+something people will click occasionally.
 
 ## If it does not start
 
-**Build succeeds, app never loads.** Check the log for `API failed to start`.
-The entrypoint waits up to 60 seconds for the API's health endpoint and exits
-if it never answers, rather than leaving Streamlit serving a dead backend.
+**`ModuleNotFoundError: app`.** The main file path is wrong. It must be
+`ui/streamlit_app.py`; the app adds the repository root to `sys.path` itself.
 
 **"No GEMINI_API_KEY configured" in the sidebar.** The secret is missing or
 misnamed. Uploading and parsing still work; embedding and answering do not.
 
-**Answers fail with a quota message.** The daily limit. It resets at midnight
-Pacific. `LLM_MODEL` can be set as a Space variable to try another model, but
-every free-tier model shares the same daily cap per project.
+**Answers fail with a quota message.** The daily limit, which resets at
+midnight Pacific.
 
-**Space is asleep.** Free Spaces sleep after 48 hours idle and take about a
-minute to wake on the next visit.
-
-## Elsewhere
-
-The container is not Hugging Face specific. Anywhere that runs a Dockerfile
-and lets you set `PORT` will work -- Render, Railway, Fly.io, a VPS. Only the
-Space README's front matter is platform-specific, and it lives in `deploy/`
-rather than in the image.
+**Uploads vanish.** Expected. No persistent disk on any free tier.

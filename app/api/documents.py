@@ -61,11 +61,8 @@ async def upload_document(
     results that crowd out genuinely distinct sources.
     """
     try:
-        stored = await storage.save_upload(
-            file,
-            file.filename,
-            uploads_dir=settings.uploads_dir,
-            max_bytes=settings.max_upload_bytes,
+        document, duplicate = await pipeline.store_upload(
+            conn, settings, file, file.filename
         )
     except storage.UnsupportedFileType as exc:
         raise HTTPException(
@@ -85,13 +82,7 @@ async def upload_document(
             status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty"
         ) from exc
 
-    existing = documents_repo.find_by_sha256(conn, stored.sha256)
-    if existing is not None:
-        stored.path.unlink(missing_ok=True)  # drop the redundant copy
-        return DocumentResponse.of(existing, duplicate=True)
-
-    document = documents_repo.create(conn, stored, filename=file.filename or "untitled")
-    return DocumentResponse.of(document)
+    return DocumentResponse.of(document, duplicate=duplicate)
 
 
 @router.get("", response_model=list[DocumentResponse], summary="List documents")

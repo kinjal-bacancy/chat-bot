@@ -175,12 +175,10 @@ rate limit.
 
 ## Deploying
 
-One container runs both processes. See [docs/DEPLOY.md](docs/DEPLOY.md).
+The UI reaches the pipeline over HTTP when `RAG_API_URL` is set, and calls
+`app.core` in-process when it is not -- so it runs unchanged on a host that
+allows only one process. `Dockerfile` covers the two-process case.
 
-```bash
-./deploy/to-space.sh https://huggingface.co/spaces/<user>/<space>
-```
-
-Worth reading the constraints first: the free Gemini tier allows 20
-generations per day, nothing persists between restarts, and there is no
-authentication.
+See [docs/DEPLOY.md](docs/DEPLOY.md), which leads with the constraints rather
+than the steps: the free Gemini tier allows 20 generations per day, nothing
+persists between restarts, and there is no authentication.

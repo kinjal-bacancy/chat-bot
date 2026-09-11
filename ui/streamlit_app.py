@@ -16,26 +16,71 @@ from pathlib import Path
 
 import streamlit as st
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+UI_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(UI_DIR))
+# The repository root, so the in-process backend can import app.core when
+# there is no API process to talk to.
+sys.path.insert(0, str(UI_DIR.parent))
 
-from api import Api, ApiError  # noqa: E402
 
-DEFAULT_API = os.environ.get("RAG_API_URL", "http://127.0.0.1:8000")
+# Must be the very first Streamlit call in the script. Reading st.secrets
+# below can emit a UI message, and anything rendered before this raises
+# StreamlitSetPageConfigMustBeFirstCommandError.
+st.set_page_config(page_title="RAG Chatbot", page_icon="📚", layout="wide")
+
+# Where Streamlit looks for secrets. Checked directly rather than by catching
+# an exception from st.secrets: a missing file makes Streamlit render a
+# "No secrets found" banner, which is noise in the normal local case where
+# configuration comes from .env instead.
+SECRET_FILES = (
+    Path.home() / ".streamlit" / "secrets.toml",
+    Path.cwd() / ".streamlit" / "secrets.toml",
+)
+
+
+def _export_secrets() -> None:
+    """Copy Streamlit secrets into the environment.
+
+    Settings are read from environment variables, and Streamlit Community
+    Cloud supplies secrets through st.secrets rather than the environment.
+    Existing variables win, so a local .env is not overridden.
+    """
+    if not any(path.exists() for path in SECRET_FILES):
+        return
+    try:
+        for key, value in st.secrets.items():
+            if isinstance(value, (str, int, float, bool)):
+                os.environ.setdefault(key, str(value))
+    except Exception:
+        pass
+
+
+_export_secrets()
+
+from backend import ApiError, build_backend, default_api_url  # noqa: E402
+
+DEFAULT_API = default_api_url()
 STATUS_ICON = {
     "uploaded": "•", "parsed": "•", "chunked": "•",
     "indexed": "✓", "failed": "✕",
 }
 
-st.set_page_config(page_title="RAG Chatbot", page_icon="📚", layout="wide")
+
+@st.cache_resource(show_spinner=False)
+def _backend(api_url: str | None):
+    """Cached across re-runs: Streamlit re-executes this script on every
+    interaction, and rebuilding the backend each time would reopen the
+    database and re-run migrations on every keystroke."""
+    return build_backend(api_url)
 
 
-def api() -> Api:
-    return Api(st.session_state.get("api_url", DEFAULT_API))
+def api():
+    return _backend(st.session_state.get("api_url") or None)
 
 
 def init_state() -> None:
     st.session_state.setdefault("messages", [])
-    st.session_state.setdefault("api_url", DEFAULT_API)
+    st.session_state.setdefault("api_url", DEFAULT_API or "")
     st.session_state.setdefault("uploaded", set())
 
 
@@ -43,14 +88,15 @@ def init_state() -> None:
 
 
 def render_connection() -> dict | None:
-    st.sidebar.text_input("API URL", key="api_url")
+    if DEFAULT_API is not None:
+        st.sidebar.text_input("API URL", key="api_url")
     try:
         health = api().health()
     except ApiError as exc:
-        st.sidebar.error(f"API unreachable\n\n{exc}")
+        st.sidebar.error(f"Backend unavailable\n\n{exc}")
         return None
 
-    st.sidebar.success(f"Connected · {health['llm_model']}")
+    st.sidebar.success(f"Ready · {health['llm_model']}")
     if not health["credentials_configured"]:
         # Upload and parsing work without a key; embedding and answering do
         # not. Saying so here beats a 502 three clicks later.
@@ -121,11 +167,9 @@ def render_document_list() -> list[dict]:
             st.rerun()
 
         if document["status"] == "failed" and document["error"]:
-            st.sidebar.error(document["error"], icon="✕")
+            st.sidebar.error(document["error"], icon="🚫")
         elif document["status"] != "indexed":
-            st.sidebar.warning(
-                "Not searchable until ingested.", icon="!"
-            )
+            st.sidebar.warning("Not searchable until ingested.", icon="⚠️")
 
     return documents
 
@@ -175,7 +219,7 @@ def render_history() -> None:
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             if message["role"] == "assistant" and message.get("refused"):
-                st.info(message["content"], icon="○")
+                st.info(message["content"], icon="ℹ️")
             else:
                 st.markdown(message["content"])
             if message["role"] == "assistant":
@@ -210,7 +254,7 @@ def ask(question: str, top_k: int, mode: str, document_ids: list[str] | None) ->
                     message.update(payload)
                     message["content"] = payload["answer"]
                     if payload["refused"]:
-                        placeholder.info(payload["answer"], icon="○")
+                        placeholder.info(payload["answer"], icon="ℹ️")
                     else:
                         placeholder.markdown(payload["answer"])
         except ApiError as exc:
@@ -241,8 +285,11 @@ def main() -> None:
     documents = render_document_list()
 
     st.sidebar.subheader("Retrieval")
+    modes = ["hybrid", "dense", "keyword"]
+    configured = (health or {}).get("search_mode", "hybrid")
     mode = st.sidebar.selectbox(
-        "Mode", ["dense", "hybrid", "keyword"],
+        "Mode", modes,
+        index=modes.index(configured) if configured in modes else 0,
         help="dense: embeddings · keyword: BM25 · hybrid: both, fused by rank",
     )
     top_k = st.sidebar.slider("Chunks per answer", 1, 12, 5)
@@ -261,11 +308,11 @@ def main() -> None:
     render_history()
 
     if not indexed:
-        st.info("Upload a document in the sidebar to get started.", icon="○")
+        st.info("Upload a document in the sidebar to get started.", icon="📄")
 
     if question := st.chat_input("Ask a question about your documents"):
         if health is None:
-            st.error("Not connected to the API.")
+            st.error("The backend is unavailable.")
         else:
             ask(question, top_k, mode, chosen or None)
 

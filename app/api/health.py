@@ -18,6 +18,7 @@ class HealthResponse(BaseModel):
     embedding_dimensions: int
     llm_provider: str
     llm_model: str
+    search_mode: str
     credentials_configured: bool
 
 
@@ -38,5 +39,6 @@ def health(settings: Settings = Depends(get_settings)) -> HealthResponse:
         embedding_dimensions=settings.embedding_dimensions,
         llm_provider=settings.llm_provider,
         llm_model=settings.llm_model,
+        search_mode=settings.search_mode,
         credentials_configured=settings.credentials_configured,
     )
